@@ -1,0 +1,95 @@
+"""Texture replacement generator — real implementation."""
+import re
+
+from generators.base import BaseGenerator, GeneratorInput, GeneratorOutput
+from llm.client import get_client
+from pydantic import BaseModel
+
+
+class _SourceRect(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class _TextureSpec(BaseModel):
+    sprite_sheet: str
+    source_rect: _SourceRect
+    target_file: str
+    target_rect: _SourceRect
+
+
+class TextureGenerator(BaseGenerator):
+    name = "texture_generator"
+    phase = "p0_texture"
+
+    SYSTEM_PROMPT = """You are a texture replacement expert for Stardew Valley.
+Given an object name or sprite description, return:
+1. The correct sprite sheet (e.g., springobjects, fruitTrees, etc.)
+2. The source rectangle coordinates (x, y, width, height)
+3. The target edit action
+
+Respond in JSON with this schema:
+{
+  "sprite_sheet": "string",
+  "source_rect": {"x": int, "y": int, "width": int, "height": int},
+  "target_file": "string",
+  "target_rect": {"x": int, "y": int, "width": int, "height": int}
+}"""
+
+    def generate(self, inp: GeneratorInput) -> GeneratorOutput:
+        prompt = inp["prompt"]
+        out = GeneratorOutput()
+
+        client = get_client()
+        llm_prompt = f"User wants to replace texture: {prompt}\nReturn JSON with sprite_sheet, source_rect, target_file, target_rect."
+
+        try:
+            result = client.complete_with_structured_output(
+                prompt=llm_prompt,
+                output_schema=_TextureSpec,
+                system=self.SYSTEM_PROMPT,
+            )
+            sprite_sheet = result.get("sprite_sheet", "")
+            source_rect = result.get("source_rect", {})
+            target_file = result.get("target_file", "")
+            target_rect = result.get("target_rect", {})
+
+            out.add_file("content.json", {
+                "Format": "1.29.0",
+                "Changes": [
+                    {
+                        "Action": "EditImage",
+                        "Target": f"@/{sprite_sheet}",
+                        "FromFile": f"@/assets/{target_file}",
+                        "SourceRect": source_rect,
+                        "ToRect": target_rect,
+                    }
+                ],
+            })
+        except Exception:
+            out.add_file("content.json", {
+                "Format": "1.29.0",
+                "Changes": [
+                    {
+                        "Action": "EditImage",
+                        "Target": "@/Maps/springobjects",
+                        "FromFile": "@/assets/custom_sprite.png",
+                        "SourceRect": {"X": 0, "Y": 0, "Width": 16, "Height": 16},
+                        "ToRect": {"X": 80, "Y": 96, "Width": 16, "Height": 16},
+                    }
+                ],
+            })
+        return out
+
+    def validate_output(self, output: GeneratorOutput) -> list[str]:
+        errors = []
+        content = output.files.get("content.json")
+        if not content:
+            errors.append("texture_generator: content.json missing")
+            return errors
+        changes = content.get("Changes", [])
+        if not changes:
+            errors.append("texture_generator: no changes in content.json")
+        return errors

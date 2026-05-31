@@ -1,0 +1,150 @@
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Protocol, runtime_checkable
+
+import anthropic
+import openai
+
+
+class RateLimitError(Exception):
+    pass
+
+
+class AuthError(Exception):
+    pass
+
+
+class LLMError(Exception):
+    pass
+
+
+@runtime_checkable
+class CompletionClient(Protocol):
+    async def complete(self, prompt: str, system: str | None = None, **kwargs) -> str: ...
+
+    async def complete_with_structured_output(
+        self, prompt: str, output_schema: type, system: str | None = None, **kwargs
+    ) -> Any: ...
+
+
+def _build_schema_dict(output_schema: type) -> dict[str, Any]:
+    schema_name = output_schema.__name__
+    schema_dict: dict[str, Any] = {"name": schema_name}
+    if hasattr(output_schema, "model_json_schema"):
+        schema_dict["schema"] = output_schema.model_json_schema()
+    elif hasattr(output_schema, "schema"):
+        schema_dict["schema"] = output_schema.schema()
+    return schema_dict
+
+
+class OpenAIClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        self._client = openai.AsyncOpenAI(
+            api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
+            base_url=base_url or os.environ.get("OPENAI_BASE_URL", "").rstrip("/"),
+        )
+        self._model = model or os.environ.get("OPENAI_MODEL", "gpt-4o")
+
+    async def complete(self, prompt: str, system: str | None = None, **kwargs) -> str:
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                **kwargs,
+            )
+            return response.choices[0].message.content or ""
+        except openai.RateLimitError:
+            raise RateLimitError("OpenAI rate limit exceeded")
+        except openai.AuthenticationError:
+            raise AuthError("OpenAI authentication failed")
+        except Exception as exc:
+            raise LLMError(f"OpenAI error: {exc}") from exc
+
+    async def complete_with_structured_output(
+        self, prompt: str, output_schema: type, system: str | None = None, **kwargs
+    ) -> Any:
+        schema_dict = _build_schema_dict(output_schema)
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": schema_dict,
+                },
+                **kwargs,
+            )
+            content = response.choices[0].message.content or ""
+            return json.loads(content)
+        except openai.RateLimitError:
+            raise RateLimitError("OpenAI rate limit exceeded")
+        except openai.AuthenticationError:
+            raise AuthError("OpenAI authentication failed")
+        except Exception as exc:
+            raise LLMError(f"OpenAI structured output error: {exc}") from exc
+
+
+class AnthropicClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        self._client = anthropic.AsyncAnthropic(
+            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
+            base_url=base_url or os.environ.get("ANTHROPIC_BASE_URL", "").rstrip("/"),
+        )
+        self._model = model or os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+
+    async def complete(self, prompt: str, system: str | None = None, **kwargs) -> str:
+        try:
+            response = await self._client.messages.create(
+                model=self._model,
+                max_tokens=4096,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                **kwargs,
+            )
+            return response.content[0].text
+        except anthropic.RateLimitError:
+            raise RateLimitError("Anthropic rate limit exceeded")
+        except anthropic.AuthenticationError:
+            raise AuthError("Anthropic authentication failed")
+        except Exception as exc:
+            raise LLMError(f"Anthropic error: {exc}") from exc
+
+    async def complete_with_structured_output(
+        self, prompt: str, output_schema: type, system: str | None = None, **kwargs
+    ) -> Any:
+        schema_dict = _build_schema_dict(output_schema)
+        schema_json = json.dumps(schema_dict, indent=2)
+        full_prompt = f"""{prompt}
+
+Respond with valid JSON matching this schema:
+{schema_json}"""
+        text = await self.complete(full_prompt, system=system, **kwargs)
+        return json.loads(text)
+
+
+def get_client() -> CompletionClient:
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return AnthropicClient()
+    if os.environ.get("OPENAI_API_KEY"):
+        return OpenAIClient()
+    raise RuntimeError("No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.")
