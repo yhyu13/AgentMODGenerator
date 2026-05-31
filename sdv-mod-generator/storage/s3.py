@@ -5,6 +5,7 @@ Zip files are written to LOCAL_OUTPUT_DIR and served as file:// URLs.
 """
 import os
 import shutil
+import threading
 from pathlib import Path
 
 import boto3
@@ -20,33 +21,29 @@ _AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
 _LOCAL_OUTPUT_DIR = os.getenv("LOCAL_OUTPUT_DIR", "/tmp/sdv-mod-generator/outputs")
 _PUBLIC_URL_TEMPLATE = os.getenv("S3_PUBLIC_URL", "")
 
-_use_local = False
 _client = None
+_client_lock = threading.Lock()
 
 
 def _is_local_mode() -> bool:
-    global _use_local
-    if _use_local:
-        return True
-    if not _AWS_ACCESS_KEY_ID:
-        _use_local = True
-        logger.info("storage.s3.mode", mode="local", reason="no_aws_credentials")
-        return True
-    if _ENDPOINT_URL and "localhost" in _ENDPOINT_URL:
-        _use_local = True
-        logger.info("storage.s3.mode", mode="local", reason="localhost_endpoint")
-        return True
-    return False
+    if _AWS_ACCESS_KEY_ID:
+        return False
+    if _ENDPOINT_URL and "localhost" not in _ENDPOINT_URL:
+        return False
+    return True
 
 
 def get_client():
     global _client
     if _client is not None:
         return _client
-    if _is_local_mode():
-        return None
-    logger.info("storage.s3.connected", mode="aws", bucket=_BUCKET, region=_REGION)
-    _client = boto3.client("s3", region_name=_REGION)
+    with _client_lock:
+        if _client is not None:
+            return _client
+        if _is_local_mode():
+            return None
+        logger.info("storage.s3.connected", mode="aws", bucket=_BUCKET, region=_REGION)
+        _client = boto3.client("s3", region_name=_REGION)
     return _client
 
 

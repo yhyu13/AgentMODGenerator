@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class GenerateRequest(BaseModel):
     user_id: str
-    prompt: str
+    prompt: str = Field(max_length=10000)
     phase: str | None = None
 
 

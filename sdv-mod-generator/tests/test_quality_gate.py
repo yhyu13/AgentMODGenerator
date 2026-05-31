@@ -73,7 +73,7 @@ class TestT2Gate:
     async def test_t2_no_llm_returns_skipped(self):
         result = await run_t2("req_test", {})
         assert result.passed is True
-        assert result.score == 10
+        assert result.score == 0
         assert "no LLM" in result.feedback
 
     def test_t2_result_dataclass(self):

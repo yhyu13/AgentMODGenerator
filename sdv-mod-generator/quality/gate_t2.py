@@ -37,7 +37,7 @@ async def run_t2(request_id: str, outputs: dict[str, GeneratorOutput]) -> T2Resu
     except RuntimeError as exc:
         if "No LLM provider" in str(exc):
             logger.info("quality.t2.skipped.no_client", request_id=request_id)
-            return T2Result(available=False, passed=True, score=10, feedback="[T2 judge skipped: no LLM provider configured]")
+            return T2Result(available=False, passed=True, score=0, feedback="[T2 judge skipped: no LLM provider configured]")
         raise
     except Exception as exc:
         logger.error("quality.t2.error", request_id=request_id, error=str(exc))
@@ -84,7 +84,7 @@ def _build_mod_summary(outputs: dict[str, GeneratorOutput]) -> str:
 
 def _parse_judge_response(response: str) -> tuple[int, str]:
     lines = response.strip().split("\n")
-    score = 10
+    score = 0
     feedback = ""
 
     for line in lines:
@@ -92,9 +92,9 @@ def _parse_judge_response(response: str) -> tuple[int, str]:
         if line.startswith("SCORE:"):
             try:
                 score = int(line.split(":")[1].strip())
-                score = max(1, min(10, score))
+                score = max(0, min(10, score))
             except (ValueError, IndexError):
-                score = 10
+                score = 0
         elif line.startswith("FEEDBACK:"):
             feedback = line.split(":", 1)[1].strip()
 

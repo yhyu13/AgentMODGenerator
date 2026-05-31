@@ -1,5 +1,4 @@
 """Database query helpers for mod_requests, mod_outputs, mod_history."""
-import json
 from typing import Any
 
 import structlog
@@ -30,8 +29,8 @@ async def create_mod_request(
                 "user_id": user_id,
                 "prompt": prompt,
                 "phase": phase,
-                "generators": json.dumps(generators),
-                "hint": json.dumps(hint),
+                "generators": generators,
+                "hint": hint,
             },
         )
 

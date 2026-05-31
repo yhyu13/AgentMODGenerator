@@ -1,4 +1,5 @@
 """Redis storage — async aioredis."""
+import asyncio
 import json
 import os
 
@@ -10,13 +11,16 @@ logger = structlog.get_logger()
 _REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 _client: redis.Redis | None = None
+_client_lock = asyncio.Lock()
 
 
 async def get_client() -> redis.Redis:
     global _client
     if _client is None:
-        _client = redis.from_url(_REDIS_URL, decode_responses=True)
-        logger.info("storage.redis.connected", url=_REDIS_URL)
+        async with _client_lock:
+            if _client is None:
+                _client = redis.from_url(_REDIS_URL, decode_responses=True)
+                logger.info("storage.redis.connected", url=_REDIS_URL)
     return _client
 
 

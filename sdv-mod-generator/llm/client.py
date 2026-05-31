@@ -59,7 +59,10 @@ class OpenAIClient:
         _api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         if not _api_key:
             raise ValueError("OPENAI_API_KEY is not set or is empty")
-        self._client = openai.AsyncOpenAI(api_key=_api_key, base_url=base_url or os.environ.get("OPENAI_BASE_URL", "").rstrip("/"))
+        _base_url = base_url or os.environ.get("OPENAI_BASE_URL") or None
+        if _base_url is not None:
+            _base_url = _base_url.rstrip("/")
+        self._client = openai.AsyncOpenAI(api_key=_api_key, base_url=_base_url)
         self._model = model or os.environ.get("OPENAI_MODEL", "gpt-4o")
 
     async def complete(self, prompt: str, system: str | None = None, **kwargs) -> str:
@@ -87,6 +90,7 @@ class OpenAIClient:
     async def complete_with_structured_output(
         self, prompt: str, output_schema: type, system: str | None = None, **kwargs
     ) -> Any:
+        raw_content: str = ""
         schema_dict = _build_schema_dict(output_schema)
         messages: list[dict[str, str]] = []
         if system:
@@ -133,11 +137,18 @@ Respond with valid JSON matching this schema:
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": full_prompt})
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            **kwargs,
-        )
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                **kwargs,
+            )
+        except openai.RateLimitError:
+            raise RateLimitError("OpenAI rate limit exceeded in fallback")
+        except openai.AuthenticationError:
+            raise AuthError("OpenAI authentication failed in fallback")
+        except openai.BadRequestError as exc:
+            raise LLMError(f"OpenAI BadRequestError in fallback (no more fallback): {exc}") from exc
         if not response.choices:
             raise LLMError("OpenAI response has no choices in fallback")
         raw_content = response.choices[0].message.content or ""

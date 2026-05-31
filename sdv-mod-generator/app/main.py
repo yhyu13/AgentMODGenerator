@@ -3,13 +3,7 @@ import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
-
-from dotenv import load_dotenv
-
-_dotenv_path = Path(__file__).parent.parent / "config" / ".env"
-load_dotenv(_dotenv_path, override=False)
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
@@ -47,7 +41,8 @@ async def lifespan(app: FastAPI):
         from storage.postgres import init_db
         await init_db()
     except Exception as exc:
-        logger.warning("startup.init_db.skipped", reason=str(exc))
+        logger.error("startup.init_db.failed", reason=str(exc))
+        raise RuntimeError("Database initialization failed - cannot start") from exc
 
     bot_task: asyncio.Task | None = None
     from app.config import get_config
@@ -65,8 +60,8 @@ async def lifespan(app: FastAPI):
         if bot:
             try:
                 await bot.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("startup.discord_bot.close.failed", error=str(exc))
         try:
             await bot_task
         except asyncio.CancelledError:
@@ -76,14 +71,14 @@ async def lifespan(app: FastAPI):
     try:
         from storage.redis import close_client
         await close_client()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("startup.redis.close.failed", error=str(exc))
 
     try:
         from storage.postgres import close_pool
         await close_pool()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("startup.postgres.close.failed", error=str(exc))
 
 
 app = FastAPI(title="SDV Mod Generator", version="0.1.0", lifespan=lifespan)
@@ -121,7 +116,15 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
             hint={},
         )
 
-        result = await run_pipeline(request_id, req.user_id, req.prompt)
+        result = await asyncio.wait_for(
+            run_pipeline(request_id, req.user_id, req.prompt),
+            timeout=600,
+        )
+
+        if result is None:
+            logger.error("api.generate.pipeline_returned_none", request_id=request_id)
+            await update_mod_request_status(request_id, "failed")
+            raise HTTPException(status_code=500, detail="Pipeline failed to execute")
 
         await update_mod_request_status(request_id, result.status)
         await set_pipeline_state(request_id, {
@@ -153,7 +156,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
             )
             return GenerateResponse(request_id=request_id, status="failed")
 
-        files_preview = list(result.outputs.keys())
+        files_preview = [path for out in result.outputs.values() for path in out.files.keys()]
         await save_mod_output(
             request_id=request_id,
             zip_key=result.zip_key,
@@ -166,7 +169,12 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
 
         return GenerateResponse(request_id=request_id, status="done")
 
+    except asyncio.TimeoutError:
+        logger.error("api.generate.timeout", request_id=request_id)
+        await update_mod_request_status(request_id, "failed")
+        raise HTTPException(status_code=504, detail="Generation timed out. Request ID: " + request_id)
+
     except Exception as exc:
         logger.error("api.generate.error", request_id=request_id, error=str(exc))
         await update_mod_request_status(request_id, "failed")
-        raise HTTPException(status_code=500, detail=f"Pipeline error: {exc}")
+        raise HTTPException(status_code=500, detail="An internal error occurred. Request ID: " + request_id)

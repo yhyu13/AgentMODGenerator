@@ -1,6 +1,7 @@
 """Discord webhook endpoint for interaction callbacks."""
 import hashlib
 import hmac
+import json
 import os
 from typing import Any
 
@@ -14,14 +15,12 @@ _DISCORD_PUBLIC_KEY = os.getenv("DISCORD_PUBLIC_KEY", "")
 
 def verify_signature(body: bytes, signature: str, timestamp: str) -> bool:
     if not _DISCORD_PUBLIC_KEY:
-        raise RuntimeError("DISCORD_PUBLIC_KEY environment variable must be set")
+        logger.warning("discord.webhook.verify_signature.failed", reason="missing_public_key")
+        return False
     if not signature or not timestamp:
         return False
-    expected = hmac.new(
-        _DISCORD_PUBLIC_KEY.encode(),
-        f"{timestamp}{body.decode()}".encode(),
-        hashlib.sha256,
-    ).hexdigest()
+    msg = f"{timestamp}{body.decode('utf-8')}".encode()
+    expected = hmac.new(_DISCORD_PUBLIC_KEY.encode(), msg, hashlib.sha256).hexdigest()
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
@@ -30,10 +29,15 @@ async def handle_interaction(request: Request) -> dict[str, Any]:
     signature = request.headers.get("x-signature-ed25519", "")
     timestamp = request.headers.get("x-signature-timestamp", "")
 
-    if _DISCORD_PUBLIC_KEY and not verify_signature(body, signature, timestamp):
+    if not _DISCORD_PUBLIC_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discord endpoint not configured — set DISCORD_PUBLIC_KEY environment variable",
+        )
+    if not verify_signature(body, signature, timestamp):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
 
-    data = await request.json()
+    data = json.loads(body)
     interaction_type = data.get("type")
 
     if interaction_type == 1:
@@ -59,7 +63,8 @@ async def _handle_application_command(data: dict[str, Any]) -> dict[str, Any]:
     prompt_opt = next((o for o in options if o.get("name") == "prompt"), None)
     prompt = prompt_opt.get("value", "") if prompt_opt else ""
 
-    user_id = str(data.get("user", {}).get("id", data.get("member", {}).get("user", {}).get("id", "")))
+    user_data = data.get("user") or data.get("member", {}).get("user", {})
+    user_id = str(user_data.get("id", ""))
 
     request_id = await submit_generation(user_id, prompt)
 

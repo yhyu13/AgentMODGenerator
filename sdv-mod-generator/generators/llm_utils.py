@@ -1,5 +1,5 @@
 """LLM generation utilities for generators."""
-import concurrent.futures
+import asyncio
 import json
 import threading
 from pathlib import Path
@@ -17,6 +17,14 @@ _content_actions: dict[str, Any] | None = None
 
 _client: Any = None
 _client_lock = threading.Lock()
+_async_client_lock: asyncio.Lock | None = None
+
+
+def _get_async_client_lock() -> asyncio.Lock:
+    global _async_client_lock
+    if _async_client_lock is None:
+        _async_client_lock = asyncio.Lock()
+    return _async_client_lock
 
 
 def _load_kb_json(name: str) -> dict[str, Any]:
@@ -71,7 +79,13 @@ async def generate_structured(
     Uses native structured output when available; schema is NOT added
     to the prompt text since the client handles it via response_format.
     """
-    client = _get_cached_client()
+    global _client
+    if _client is None:
+        async with _get_async_client_lock():
+            if _client is None:
+                from llm.client import get_client
+                _client = get_client()
+    client = _client
 
     try:
         result = await client.complete_with_structured_output(
@@ -93,23 +107,23 @@ def generate_text(
 ) -> str:
     """Generate text output via LLM (sync wrapper for non-async contexts)."""
     import asyncio
+    from concurrent.futures import ThreadPoolExecutor
     from llm.client import get_client
 
     async def _run() -> str:
         return await get_client().complete(prompt, system=system, max_tokens=max_tokens)
 
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
+    def _run_sync() -> str:
         loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
             return loop.run_until_complete(_run())
         finally:
             loop.close()
-    else:
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(asyncio.run, _run())
-            return future.result()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_run_sync)
+        return future.result(timeout=120)
 
 
 def llm_system_prompt() -> str:

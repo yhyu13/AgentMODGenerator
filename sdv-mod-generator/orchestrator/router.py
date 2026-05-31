@@ -97,11 +97,12 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
     phase_map = _PHASE_BY_KEYWORD.get(game_id, {})
     matched_generators: list[str] = []
     matched_phase: str | None = None
+    best_keyword_len = 0
 
     for keyword, phase in phase_map.items():
-        if keyword in prompt_lower:
-            if matched_phase is None or len(keyword) > len(_get_key_for_phase(game_id, matched_phase, phase_map)):
-                matched_phase = phase
+        if keyword in prompt_lower and len(keyword) > best_keyword_len:
+            best_keyword_len = len(keyword)
+            matched_phase = phase
 
     if matched_phase is None:
         matched_phase = phase_map.get("shop", "shop_channel")
@@ -131,13 +132,6 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
     }
     logger.info("router.routed", game=game_id, phase=matched_phase, generators=matched_generators)
     return matched_phase, hint
-
-
-def _get_key_for_phase(game_id: str, phase: str, phase_map: dict[str, str]) -> str:
-    for k, v in phase_map.items():
-        if v == phase:
-            return k
-    return ""
 
 
 def _default_generators_for_phase(phase: str) -> list[str]:

@@ -27,16 +27,14 @@ def _patch_http_for_proxy() -> None:
 
     _proxy_url = os.environ.get("ALL_PROXY") or os.environ.get("all_proxy")
     if not _proxy_url:
-        _proxy_url = "socks5://127.0.0.1:1089"
-
-    original_static_login = http.HTTPClient.static_login
+        logger.warning("discord.bot.proxy.not_configured", message="ALL_PROXY not set, skipping proxy patching")
+        return
 
     async def patched_static_login(self, token: str):
         proxy_connector = ProxyConnector.from_url(_proxy_url)
 
         self._HTTPClient__session = aiohttp.ClientSession(
             connector=proxy_connector,
-            ws_response_class=http.DiscordClientWebSocketResponse,
             trace_configs=None,
             cookie_jar=aiohttp.DummyCookieJar(),
         )
@@ -50,15 +48,17 @@ def _patch_http_for_proxy() -> None:
             data = await self.request(http.Route("GET", "/users/@me"))
         except discord.errors.HTTPException as exc:
             self.token = old_token
+            await self._HTTPClient__session.close()
             if exc.status == 401:
                 raise discord.errors.LoginFailure("Improper token has been passed.") from exc
             raise
+        finally:
+            if not self._HTTPClient__session.closed:
+                await self._HTTPClient__session.close()
 
         return data
 
     http.HTTPClient.static_login = patched_static_login
-
-    original_ws_connect = http.HTTPClient.ws_connect
 
     async def patched_ws_connect(self, url: str, *, compress: int = 0):
         try:
@@ -113,7 +113,7 @@ async def start_bot() -> None:
         logger.info("discord.bot.ready", user=str(_bot.user))
 
     logger.info("discord.bot.starting", app_id=config.discord_app_id or "global")
-    await asyncio.wait_for(_bot.start(token), timeout=30)
+    await asyncio.wait_for(_bot.start(token), timeout=60)
 
 
 def get_bot() -> commands.Bot | None:

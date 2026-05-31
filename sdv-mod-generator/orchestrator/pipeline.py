@@ -1,4 +1,5 @@
 """LangGraph pipeline — game-agnostic, pack-based."""
+import asyncio
 import structlog
 from langgraph.graph import END, StateGraph
 
@@ -80,11 +81,12 @@ async def node_generate(state: PipelineState) -> PipelineState:
         except Exception as exc:
             logger.error("pipeline.generator_failed", request_id=state.request_id, generator=gen_name, error=str(exc))
             state.errors.append(f"{gen_name}: {exc}")
+            state.status = "failed"
+            return state
 
     if not state.outputs and state.errors:
         logger.error("pipeline.no_outputs", request_id=state.request_id, errors=state.errors)
         state.errors.append("all generators failed: no outputs produced")
-        state.status = "failed"
 
     return state
 
@@ -128,7 +130,7 @@ async def node_t2_gate(state: PipelineState) -> PipelineState:
     return state
 
 
-def node_package(state: PipelineState) -> PipelineState:
+async def node_package(state: PipelineState) -> PipelineState:
     """Package outputs into zip."""
     logger.info("pipeline.packaging", request_id=state.request_id)
     state.status = "packaging"
@@ -140,10 +142,17 @@ def node_package(state: PipelineState) -> PipelineState:
         all_assets.extend(output.assets)
 
     try:
-        zip_key = packager_func(state.request_id, all_files, all_assets)
+        zip_key = await asyncio.wait_for(
+            asyncio.to_thread(packager_func, state.request_id, all_files, all_assets),
+            timeout=300,
+        )
         state.zip_key = zip_key
         state.status = "done"
         logger.info("pipeline.done", request_id=state.request_id, zip_key=zip_key)
+    except asyncio.TimeoutError:
+        logger.error("pipeline.packaging_timeout", request_id=state.request_id)
+        state.errors.append("packaging timed out after 300 seconds")
+        state.status = "failed"
     except Exception as exc:
         logger.error("pipeline.packaging_failed", request_id=state.request_id, error=str(exc))
         state.errors.append(f"packaging failed: {exc}")

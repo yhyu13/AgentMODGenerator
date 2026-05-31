@@ -1,5 +1,6 @@
 """PostgreSQL storage — async SQLAlchemy."""
 import os
+import threading
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -12,29 +13,34 @@ _DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgre
 
 _engine = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+_init_lock = threading.Lock()
 
 
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_async_engine(
-            _DATABASE_URL,
-            echo=False,
-            pool_size=10,
-            max_overflow=20,
-            pool_pre_ping=True,
-        )
+        with _init_lock:
+            if _engine is None:
+                _engine = create_async_engine(
+                    _DATABASE_URL,
+                    echo=False,
+                    pool_size=10,
+                    max_overflow=20,
+                    pool_pre_ping=True,
+                )
     return _engine
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     global _session_factory
     if _session_factory is None:
-        _session_factory = async_sessionmaker(
-            bind=get_engine(),
-            class_=AsyncSession,
-            expire_on_commit=False,
-        )
+        with _init_lock:
+            if _session_factory is None:
+                _session_factory = async_sessionmaker(
+                    bind=get_engine(),
+                    class_=AsyncSession,
+                    expire_on_commit=False,
+                )
     return _session_factory
 
 
