@@ -14,7 +14,7 @@ _DISCORD_PUBLIC_KEY = os.getenv("DISCORD_PUBLIC_KEY", "")
 
 def verify_signature(body: bytes, signature: str, timestamp: str) -> bool:
     if not _DISCORD_PUBLIC_KEY:
-        return False
+        raise RuntimeError("DISCORD_PUBLIC_KEY environment variable must be set")
     if not signature or not timestamp:
         return False
     expected = hmac.new(

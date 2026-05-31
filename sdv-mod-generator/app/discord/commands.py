@@ -129,7 +129,10 @@ async def _poll_until_done(request_id: str) -> tuple[str, str | None]:
                     if status in ("done", "failed"):
                         zip_key = data.get("zip_url", "")
                         if zip_key and zip_key.startswith("file://"):
-                            zip_key = Path(zip_key[7:]).name
+                            file_path = zip_key[7:]
+                            if ".." in file_path:
+                                raise ValueError(f"Path traversal in zip_url: {zip_key}")
+                            zip_key = Path(file_path).name
                         return status, zip_key
             except Exception as exc:
                 logger.warning("discord.poll.error", request_id=request_id, error=str(exc))

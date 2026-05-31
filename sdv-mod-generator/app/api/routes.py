@@ -110,9 +110,13 @@ async def get_mod_files(request_id: str) -> FilePreviewResponse:
 @router.get("/users/{user_id}/history", response_model=HistoryResponse)
 async def get_history(
     user_id: str,
-    _: Annotated[str, Depends(verify_api_key)],
+    api_key: Annotated[str, Depends(verify_api_key)],
 ) -> HistoryResponse:
     """Get generation history for a user."""
+    if not user_id or len(user_id) < 1:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+    if api_key == "anonymous":
+        raise HTTPException(status_code=401, detail="Authentication required")
     entries = await get_user_history(user_id)
     return HistoryResponse(
         user_id=user_id,
