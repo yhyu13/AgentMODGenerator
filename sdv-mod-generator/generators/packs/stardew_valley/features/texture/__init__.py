@@ -63,7 +63,7 @@ Respond with valid JSON."""
                     }
                 ],
             })
-        except Exception:
+        except (ValueError, RuntimeError, IOError):
             out.add_file("content.json", {
                 "Format": "1.29.0",
                 "Changes": [

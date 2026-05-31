@@ -61,9 +61,12 @@ def _validate_file(gen_name: str, file_path: str, content: dict | str) -> list[s
 
     if file_path.endswith(".json"):
         if not isinstance(content, dict):
-            try:
-                json.loads(content) if isinstance(content, str) else None
-            except Exception:
+            if isinstance(content, str):
+                try:
+                    json.loads(content)
+                except Exception:
+                    errors.append(f"{gen_name}: {file_path} is not a JSON object")
+            else:
                 errors.append(f"{gen_name}: {file_path} is not a JSON object")
     elif file_path.endswith(".tsv"):
         if isinstance(content, str):
