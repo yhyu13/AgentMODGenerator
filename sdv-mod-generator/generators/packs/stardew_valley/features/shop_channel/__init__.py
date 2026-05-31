@@ -90,7 +90,8 @@ def _get_sdv_item_names() -> list[str]:
         kb = StardewValleyPack.load_knowledge("item_ids")
         objs = kb.get("objects", {})
         return list(objs.values())[:50]
-    except Exception:
+    except (ImportError, AttributeError, KeyError) as exc:
+        logger.warning("get_sdv_item_names.fallback", error=str(exc))
         return ["Parsnip Seeds", "Melon Seeds", "Pumpkin Seeds", "Crystalarium"]
 
 
@@ -132,7 +133,7 @@ Respond with ONLY valid JSON matching the expected schema.'''
                 "ConfigSchema": m.config_schema,
             })
             out.metadata["mod_slug"] = slug
-        except Exception as exc:
+        except (ValueError, RuntimeError, IOError) as exc:
             logger.error("manifest_generator.failed", error=str(exc))
             out.add_file("manifest.json", _MANIFEST_FALLBACK)
         return out
@@ -194,7 +195,7 @@ For each item provide:
                 if item["ItemName"] in valid_item_names:
                     lines.append(f"{item['ItemType']}\t{item['ItemName']}\t\t{item['Price']}\t{item.get('Stock', 1)}")
             out.add_file("Data/Shops.tsv", "\n".join(lines))
-        except Exception as exc:
+        except (ValueError, RuntimeError, IOError) as exc:
             logger.error("shop_item_pool_generator.failed", error=str(exc))
             out.add_file("Data/Shops.tsv", self._fallback_tsv())
         return out
@@ -240,7 +241,7 @@ Each channel needs:
             )
             channels = TVChannelOutput(**result).channels
             out.add_file("data/tv_channels.json", {"channels": channels})
-        except Exception as exc:
+        except (ValueError, RuntimeError, IOError) as exc:
             logger.error("tv_channel_generator.failed", error=str(exc))
             out.add_file("data/tv_channels.json", {
                 "channels": [{"Name": "Shopping Network", "ChannelID": "shopping",
@@ -282,7 +283,7 @@ Keep brief and in-character.'''
             safe_key = _sanitize_key(mail.mail_key)
             out.add_file(f"mail/{safe_key}.json", {safe_key: mail.text})
             out.metadata["mail_key"] = safe_key
-        except Exception as exc:
+        except (ValueError, RuntimeError, IOError) as exc:
             logger.error("mail_system_generator.failed", error=str(exc))
             out.add_file("mail/tv_shopping_broadcast.json", {
                 "tv_shopping_broadcast": "Dear @, ^Welcome to the TV Shopping Network!^  - The TV Shopping Network"
@@ -363,7 +364,7 @@ Generate 4-6 items with name, price, and a 1-line SDV-style description.'''
                 "broadcast_day": "Sunday",
                 "items": catalog.items,
             })
-        except Exception as exc:
+        except (ValueError, RuntimeError, IOError) as exc:
             logger.error("catalog_preview_generator.failed", error=str(exc))
             out.add_file("catalog_preview.json", {
                 "shop_name": "TV Shopping Network",
@@ -408,7 +409,7 @@ Include DamageMultiplier (1.0 = normal) and optional PriceScaling. Keep close to
                 "DamageMultiplier": dmg.damage_multiplier,
                 "PriceScaling": dmg.price_scaling or {"enabled": False, "factor": 1.0},
             })
-        except Exception as exc:
+        except (ValueError, RuntimeError, IOError) as exc:
             logger.error("realism_damage_generator.failed", error=str(exc))
             out.add_file("data/damage_modifiers.json", {
                 "ModID": "TVShoppingNetwork",
@@ -450,7 +451,7 @@ Use valid Content Patcher action names only.'''
                 "OnShopOpen": triggers.on_shop_open,
                 "OnShopPurchase": triggers.on_shop_purchase,
             })
-        except Exception as exc:
+        except (ValueError, RuntimeError, IOError) as exc:
             logger.error("trigger_logic_generator.failed", error=str(exc))
             out.add_file("data/trigger_actions.json", {
                 "OnShopOpen": [{"Action": "Mail", "Mail": "tv_shopping_broadcast"}],
@@ -494,7 +495,7 @@ MinItems/MaxItems (item counts), DiscountRate (0.5/0.75/1.0), PriceVariance (0.0
                 "DiscountRate": cfg.discount_rate,
                 "PriceVariance": cfg.price_variance,
             })
-        except Exception as exc:
+        except (ValueError, RuntimeError, IOError) as exc:
             logger.error("config_schema_generator.failed", error=str(exc))
             out.add_file("config.json", {
                 "Enabled": True, "ShopDay": 0, "ShopStartHour": 6, "ShopEndHour": 22,

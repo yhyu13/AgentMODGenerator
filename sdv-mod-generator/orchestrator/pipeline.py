@@ -56,9 +56,10 @@ async def node_generate(state: PipelineState) -> PipelineState:
     for gen_name in state.generators:
         gen_cls = pack.get_generator(gen_name, state.phase)
         if gen_cls is None:
-            logger.warning("pipeline.generator_not_found", request_id=state.request_id, generator=gen_name, game=state.game)
+            logger.error("pipeline.generator_not_found", request_id=state.request_id, generator=gen_name, game=state.game)
             state.errors.append(f"Generator not found: {gen_name}")
-            continue
+            state.status = "failed"
+            return state
 
         try:
             inp: GeneratorInput = {
