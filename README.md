@@ -115,9 +115,7 @@ sdv-mod-generator/
 ```bash
 git clone https://github.com/your-org/sdv-mod-generator.git
 cd sdv-mod-generator
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+make install    # 自动创建 .venv 并安装依赖
 ```
 
 ### 2. 配置环境变量
@@ -163,21 +161,28 @@ python scripts/init_db.py
 python scripts/seed_knowledge.py
 ```
 
-### 6. 运行 API
-
-```bash
-cd sdv-mod-generator
-uvicorn app.main:app --reload --port 8000
-```
-
-验证服务：
+### 6. 验证服务
 
 ```bash
 curl http://localhost:8000/health
 # → {"status": "ok", "ts": "..."}
 ```
 
-### 7. 触发第一个生成（测试模式）
+### 7. 使用 Makefile 构建（推荐）
+
+```bash
+cd sdv-mod-generator
+
+make install       # 自动创建 .venv 并安装依赖
+make test          # 运行测试
+make lint          # 类型检查 + lint（mypy + ruff）
+make run           # 启动 API 服务（uvicorn --reload --port 8000）
+make build         # 运行 test + lint，验证全部通过
+make clean         # 清理缓存文件
+make stop          # 停止 uvicorn 服务
+```
+
+### 8. 触发第一个生成（测试模式）
 
 ```bash
 curl -X POST http://localhost:8000/v1/mods/generate \

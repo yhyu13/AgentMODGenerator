@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _dotenv_path = Path(__file__).parent.parent / "config" / ".env"
-load_dotenv(_dotenv_path, override=False)
+load_dotenv(_dotenv_path, override=True)
 
 
 @dataclass

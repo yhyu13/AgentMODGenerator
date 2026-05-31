@@ -1,6 +1,8 @@
 .PHONY: install install-test test lint clean build run stop
 
-VENV := ../.venv
+# Compute paths relative to the Makefile's directory (supports make run from parent dir)
+_MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+VENV := $(abspath $(_MAKEFILE_DIR)../.venv)
 PYTHON := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 PYTEST_QUICK := $(VENV)/bin/pytest
@@ -11,6 +13,7 @@ PYTEST_ARGS := -v
 .DEFAULT_GOAL := build
 
 install:
+	@test -d $(VENV) || python -m venv $(VENV)
 	$(VENV)/bin/pip install -r requirements.txt
 
 install-test:
@@ -36,7 +39,7 @@ build: test lint
 	@echo "Build passed — tests + lint green"
 
 run:
-	ALL_PROXY=socks5://127.0.0.1:1089 HTTPS_PROXY=http://127.0.0.1:8889 HTTP_PROXY=http://127.0.0.1:8889 PYTHONPATH=$(PYTHONPATH) $(UVICORN) app.main:app --reload --port 8000
+	cd $(_MAKEFILE_DIR) && PYTHONPATH=. $(UVICORN) app.main:app --reload --port 8000
 
 stop:
 	pkill -f "uvicorn app.main:app" || true
