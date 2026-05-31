@@ -4,6 +4,20 @@
 
 ---
 
+## MVP 2.0 目标参考
+
+**参考模组**：[TV Shopping Network](https://ggmods.com/game/stardew-valley/mod/147/)
+
+- 作者：Airyn
+- 下载：https://ggmods.com/game/stardew-valley/mod/147/download/8999
+- 类型：Content Patcher 模组
+- 功能：新增 TV 购物频道，每周随机商品，邮件发货，商品损坏退款机制
+- 框架依赖：Content Patcher + BroadcastAPI + Esca's Modding Plugins
+- 文件大小：121 KB
+- 这是我们 MVP 2.0 要能生成的标杆模组
+
+---
+
 ## 阶段总览
 
 ```
