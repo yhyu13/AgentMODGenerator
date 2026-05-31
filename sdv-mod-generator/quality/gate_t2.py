@@ -1,4 +1,5 @@
 """Tier 2 LLM semantic judge — real implementation."""
+import re
 from typing import Any
 import structlog
 from dataclasses import dataclass
@@ -7,6 +8,18 @@ from generators.base import GeneratorOutput
 from llm.client import get_client
 
 logger = structlog.get_logger()
+
+_INJECTION_PATTERNS = [
+    re.compile(r"^SCORE:\s*\d+", re.MULTILINE | re.IGNORECASE),
+    re.compile(r"^FEEDBACK:\s*.+", re.MULTILINE | re.IGNORECASE),
+]
+
+
+def _sanitize_for_judge(content: str) -> str:
+    sanitized = content
+    for pattern in _INJECTION_PATTERNS:
+        sanitized = pattern.sub("[REDACTED]", sanitized)
+    return sanitized
 
 
 @dataclass
@@ -76,9 +89,22 @@ def _build_mod_summary(outputs: dict[str, GeneratorOutput]) -> str:
         parts.append(f"## {gen_name}: {', '.join(files)}")
         for path, content in output.files.items():
             if isinstance(content, dict):
-                parts.append(f"  {path}: {str(content)[:200]}")
-            elif isinstance(content, str) and len(content) < 200:
-                parts.append(f"  {path}: {content}")
+                content_str = str(content)
+                sanitized = _sanitize_for_judge(content_str)
+                if len(sanitized) > 200:
+                    try:
+                        import json
+                        truncated = json.loads(sanitized)
+                        truncated = {k: (v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v) for k, v in truncated.items()}
+                        sanitized = json.dumps(truncated)
+                    except Exception:
+                        sanitized = sanitized[:197] + "..."
+                parts.append(f"  {path}: {sanitized}")
+            elif isinstance(content, str):
+                sanitized = _sanitize_for_judge(content)
+                if len(sanitized) > 200:
+                    sanitized = sanitized[:197] + "..."
+                parts.append(f"  {path}: {sanitized}")
     return "\n".join(parts)
 
 

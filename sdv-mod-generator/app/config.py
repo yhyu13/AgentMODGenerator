@@ -23,6 +23,7 @@ class Config:
     discord_app_id: str = os.getenv("DISCORD_APP_ID", "")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     api_key: str = os.getenv("API_KEY", "")
+    api_owner_user_id: str = os.getenv("API_OWNER_USER_ID", "")
 
 
 _config: Config | None = None

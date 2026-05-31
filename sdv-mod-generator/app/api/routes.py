@@ -1,4 +1,5 @@
 """API routes — P1-impl with real PostgreSQL + Redis."""
+import secrets
 import structlog
 from datetime import datetime, timezone
 from typing import Annotated
@@ -20,17 +21,17 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/v1", tags=["v1"])
 
 
-async def verify_api_key(x_api_key: Annotated[str | None, Header()] = None) -> str:
+async def verify_api_key(x_api_key: Annotated[str | None, Header()] = None) -> bool:
     from app.config import get_config
     cfg = get_config()
     if not cfg.api_key:
-        return "anonymous"
-    if not x_api_key or x_api_key != cfg.api_key:
+        return True
+    if not x_api_key or not secrets.compare_digest(x_api_key, cfg.api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key",
         )
-    return x_api_key
+    return True
 
 
 @router.get("/mods/{request_id}", response_model=ModStatusResponse)
@@ -110,13 +111,17 @@ async def get_mod_files(request_id: str) -> FilePreviewResponse:
 @router.get("/users/{user_id}/history", response_model=HistoryResponse)
 async def get_history(
     user_id: str,
-    api_key: Annotated[str, Depends(verify_api_key)],
+    _auth: Annotated[bool, Depends(verify_api_key)],
 ) -> HistoryResponse:
     """Get generation history for a user."""
+    from app.config import get_config
+    cfg = get_config()
     if not user_id or len(user_id) < 1:
         raise HTTPException(status_code=400, detail="Invalid user_id")
-    if api_key == "anonymous":
+    if not cfg.api_key:
         raise HTTPException(status_code=401, detail="Authentication required")
+    if cfg.api_owner_user_id and user_id != cfg.api_owner_user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: not authorized to access this user's history")
     entries = await get_user_history(user_id)
     return HistoryResponse(
         user_id=user_id,
