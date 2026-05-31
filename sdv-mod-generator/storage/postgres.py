@@ -1,4 +1,5 @@
 """PostgreSQL storage — async SQLAlchemy."""
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -7,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 logger = structlog.get_logger()
 
-_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/sdv_mods"
+_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/sdv_mods")
 
 _engine = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None

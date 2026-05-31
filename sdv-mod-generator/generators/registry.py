@@ -1,4 +1,8 @@
-"""Generator registry."""
+"""Generator registry — legacy, superseded by GamePack system.
+
+The pipeline now uses get_game_pack() from generators.core instead.
+This module is kept for potential debugging/ad-hoc use.
+"""
 from generators.base import BaseGenerator
 
 _GENERATOR_REGISTRY: dict[str, type[BaseGenerator]] = {}
@@ -14,30 +18,3 @@ def get(name: str) -> type[BaseGenerator] | None:
 
 def list_generators() -> list[str]:
     return list(_GENERATOR_REGISTRY.keys())
-
-
-from generators.p0_texture import TextureGenerator  # noqa: E402
-register("texture_generator", TextureGenerator)
-
-from generators.p1_shop_channel import (  # noqa: E402
-    ManifestGenerator,
-    ShopItemPoolGenerator,
-    TVChannelGenerator,
-    MailSystemGenerator,
-    ItemSpritesGenerator,
-    UIAssetsGenerator,
-    CatalogPreviewGenerator,
-    RealismDamageGenerator,
-    TriggerLogicGenerator,
-    ConfigSchemaGenerator,
-)
-register("manifest_generator", ManifestGenerator)
-register("shop_item_pool_generator", ShopItemPoolGenerator)
-register("tv_channel_generator", TVChannelGenerator)
-register("mail_system_generator", MailSystemGenerator)
-register("item_sprites_generator", ItemSpritesGenerator)
-register("ui_assets_generator", UIAssetsGenerator)
-register("catalog_preview_generator", CatalogPreviewGenerator)
-register("realism_damage_generator", RealismDamageGenerator)
-register("trigger_logic_generator", TriggerLogicGenerator)
-register("config_schema_generator", ConfigSchemaGenerator)

@@ -30,7 +30,7 @@ _MANIFEST = GameManifest(
     game_id="stardew_valley",
     display_name="Stardew Valley",
     mod_format="ContentPatcher",
-    supported_phases=["shop_channel", "npc_schedule", "event_mod", "texture", "custom_crafting"],
+    supported_phases=["shop_channel", "texture"],
     knowledge_dir=_PKGDIR / "knowledge",
 )
 
