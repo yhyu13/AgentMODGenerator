@@ -114,7 +114,7 @@ class TestNodeT1Gate:
         out.add_file("config.json", {"Enabled": True})
         out.add_file("data/trigger_actions.json", {"OnShopOpen": []})
         state.outputs = {"manifest_generator": out}
-        result = await node_t1_gate(state)
+        result = node_t1_gate(state)
         assert result.t1_passed is True
         assert result.status != "failed"
 
@@ -131,7 +131,7 @@ class TestNodeT1Gate:
         out = GeneratorOutput()
         out.add_file("manifest.json", {"Name": "Only Name"})
         state.outputs = {"manifest_generator": out}
-        result = await node_t1_gate(state)
+        result = node_t1_gate(state)
         assert result.t1_passed is False
         assert result.status == "failed"
 
