@@ -12,6 +12,7 @@ from app.discord.commands import setup_commands
 logger = structlog.get_logger()
 
 _intents = discord.Intents.default()
+_intents.messages = True
 _intents.message_content = True
 
 _bot: commands.Bot | None = None
@@ -93,6 +94,17 @@ async def start_bot() -> None:
     _patch_http_for_proxy()
 
     _bot = commands.Bot(command_prefix="!", intents=_intents)
+
+    @_bot.event
+    async def on_message(message: discord.Message) -> None:
+        logger.info("discord.message.received", author=str(message.author), content=message.content)
+        if message.author.bot:
+            return
+        content = message.content.lower().strip()
+        if content in ("hi", "hello", "hey", "你好", "嗨"):
+            await message.channel.send(
+                "Hello! I'm Agent Mod 0x01. Use `/generate <prompt>` to create a Stardew Valley mod."
+            )
 
     setup_commands(_bot)
 
