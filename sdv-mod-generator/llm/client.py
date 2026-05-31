@@ -56,10 +56,10 @@ class OpenAIClient:
         base_url: str | None = None,
         model: str | None = None,
     ) -> None:
-        self._client = openai.AsyncOpenAI(
-            api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
-            base_url=base_url or os.environ.get("OPENAI_BASE_URL", "").rstrip("/"),
-        )
+        _api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        if not _api_key:
+            raise ValueError("OPENAI_API_KEY is not set or is empty")
+        self._client = openai.AsyncOpenAI(api_key=_api_key, base_url=base_url or os.environ.get("OPENAI_BASE_URL", "").rstrip("/"))
         self._model = model or os.environ.get("OPENAI_MODEL", "gpt-4o")
 
     async def complete(self, prompt: str, system: str | None = None, **kwargs) -> str:
@@ -73,6 +73,8 @@ class OpenAIClient:
                 messages=messages,
                 **kwargs,
             )
+            if not response.choices:
+                raise LLMError("OpenAI response has no choices")
             content = response.choices[0].message.content or ""
             return content
         except openai.RateLimitError:
@@ -100,6 +102,8 @@ class OpenAIClient:
                 },
                 **kwargs,
             )
+            if not response.choices:
+                raise LLMError("OpenAI response has no choices")
             raw_content = response.choices[0].message.content or ""
             content = _strip_code_fence(raw_content)
             return json.loads(content)
@@ -134,9 +138,14 @@ Respond with valid JSON matching this schema:
             messages=messages,
             **kwargs,
         )
+        if not response.choices:
+            raise LLMError("OpenAI response has no choices in fallback")
         raw_content = response.choices[0].message.content or ""
         content = _strip_code_fence(raw_content)
-        return json.loads(content)
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise LLMError(f"OpenAI fallback JSON decode error: {exc}, raw response: {raw_content[:500]}") from exc
 
 
 class AnthropicClient:
@@ -146,10 +155,10 @@ class AnthropicClient:
         base_url: str | None = None,
         model: str | None = None,
     ) -> None:
-        self._client = anthropic.AsyncAnthropic(
-            api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
-            base_url=base_url or os.environ.get("ANTHROPIC_BASE_URL", "").rstrip("/"),
-        )
+        _api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        if not _api_key:
+            raise ValueError("ANTHROPIC_API_KEY is not set or is empty")
+        self._client = anthropic.AsyncAnthropic(api_key=_api_key, base_url=base_url or os.environ.get("ANTHROPIC_BASE_URL", "").rstrip("/"))
         self._model = model or os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
     async def complete(self, prompt: str, system: str | None = None, **kwargs) -> str:
@@ -162,6 +171,8 @@ class AnthropicClient:
                 messages=[{"role": "user", "content": prompt}],
                 **kwargs,
             )
+            if not response.content:
+                raise LLMError("Anthropic response has no content")
             return response.content[0].text
         except anthropic.RateLimitError:
             raise RateLimitError("Anthropic rate limit exceeded")
@@ -185,8 +196,10 @@ Respond with valid JSON matching this schema:
 
 
 def get_client() -> CompletionClient:
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    if anthropic_key:
         return AnthropicClient()
-    if os.environ.get("OPENAI_API_KEY"):
+    if openai_key:
         return OpenAIClient()
     raise RuntimeError("No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.")

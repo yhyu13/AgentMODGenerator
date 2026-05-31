@@ -1,5 +1,7 @@
 """LLM generation utilities for generators."""
+import concurrent.futures
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,9 @@ _KB_DIR = Path(__file__).parent.parent / "knowledge" / "data"
 _item_ids: dict[str, Any] | None = None
 _game_systems: dict[str, Any] | None = None
 _content_actions: dict[str, Any] | None = None
+
+_client: Any = None
+_client_lock = threading.Lock()
 
 
 def _load_kb_json(name: str) -> dict[str, Any]:
@@ -44,6 +49,16 @@ def get_content_actions() -> dict[str, Any]:
     return _content_actions
 
 
+def _get_cached_client() -> Any:
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                from llm.client import get_client
+                _client = get_client()
+    return _client
+
+
 async def generate_structured(
     prompt: str,
     output_schema: type,
@@ -56,9 +71,7 @@ async def generate_structured(
     Uses native structured output when available; schema is NOT added
     to the prompt text since the client handles it via response_format.
     """
-    from llm.client import get_client
-
-    client = get_client()
+    client = _get_cached_client()
 
     try:
         result = await client.complete_with_structured_output(
@@ -82,15 +95,11 @@ def generate_text(
     import asyncio
     from llm.client import get_client
 
-    client = get_client()
-
     async def _run() -> str:
-        return await client.complete(prompt, system=system, max_tokens=max_tokens)
+        return await get_client().complete(prompt, system=system, max_tokens=max_tokens)
 
     try:
         loop = asyncio.get_running_loop()
-        future = loop.run_in_executor(None, lambda: asyncio.run(_run()))
-        return future.result()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         try:
@@ -98,7 +107,9 @@ def generate_text(
         finally:
             loop.close()
     else:
-        raise RuntimeError("generate_text cannot be called from an async context; use the async API directly")
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, _run())
+            return future.result()
 
 
 def llm_system_prompt() -> str:
