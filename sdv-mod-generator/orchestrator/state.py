@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-from generators.base import GeneratorOutput
+from generators.core import GeneratorOutput
 
 
 @dataclass
@@ -11,6 +11,7 @@ class PipelineState:
     request_id: str
     user_id: str
     prompt: str
+    game: str = "stardew_valley"
     phase: str = ""
     generators: list[str] = field(default_factory=list)
     hint: dict = field(default_factory=dict)

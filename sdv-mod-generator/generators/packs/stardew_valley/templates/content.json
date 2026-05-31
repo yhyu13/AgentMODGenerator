@@ -1,0 +1,11 @@
+[
+  {{#each Actions}}
+  {
+    "Action": "{{this.Action}}"{{#if this.Target}},
+    "Target": "{{this.Target}}"{{/if}}{{#if this.When}},
+    "When": {{#each this.When}}"{{@key}}": "{{this}}"{{/each}}{{/if}}{{#if this.Entries}},
+    "Entries": {{this.Entries}}{{/if}}{{#if this.PatchMode}},
+    "PatchMode": "{{this.PatchMode}}"{{/if}}
+  }{{#unless @last}},{{/unless}}
+  {{/each}}
+]

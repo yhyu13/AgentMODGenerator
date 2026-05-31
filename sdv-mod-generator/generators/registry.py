@@ -16,10 +16,10 @@ def list_generators() -> list[str]:
     return list(_GENERATOR_REGISTRY.keys())
 
 
-from generators.p0_texture import TextureGenerator
+from generators.p0_texture import TextureGenerator  # noqa: E402
 register("texture_generator", TextureGenerator)
 
-from generators.p1_shop_channel import (
+from generators.p1_shop_channel import (  # noqa: E402
     ManifestGenerator,
     ShopItemPoolGenerator,
     TVChannelGenerator,

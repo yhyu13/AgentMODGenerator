@@ -9,7 +9,6 @@ from app.api.schemas import (
     FilePreviewResponse,
     HistoryResponse,
     HistoryEntry,
-    ErrorResponse,
 )
 from storage.queries import (
     get_mod_output,
@@ -27,8 +26,6 @@ async def get_mod_status(request_id: str) -> ModStatusResponse:
     Cache-first: check Redis first, then PostgreSQL.
     """
     from storage.redis import get_pipeline_state
-    from storage.postgres import get_session
-    from sqlalchemy import text
 
     redis_state = await get_pipeline_state(request_id)
     if redis_state:

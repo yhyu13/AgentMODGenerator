@@ -1,5 +1,4 @@
 """Database query helpers for mod_requests, mod_outputs, mod_history."""
-from datetime import datetime
 from typing import Any
 
 import structlog

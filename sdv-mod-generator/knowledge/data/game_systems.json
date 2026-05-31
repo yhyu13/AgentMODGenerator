@@ -1,0 +1,103 @@
+{
+  "tv_channels": {
+    "weather": {
+      "name": "Weather Channel",
+      "channel_id": "weather",
+      "broadcast_day": [0, 1, 2, 3, 4, 5, 6],
+      "broadcast_time": "600",
+      "icon": "TV3",
+      "icon_index": 0
+    },
+    "fortune": {
+      "name": "Fortune Teller",
+      "channel_id": "fortune",
+      "broadcast_day": [0, 1, 2, 3, 4, 5, 6],
+      "broadcast_time": "600",
+      "icon": "TV4",
+      "icon_index": 1
+    },
+    "tips": {
+      "name": "Living and Doing",
+      "channel_id": "tips",
+      "broadcast_day": [0, 2, 4, 6],
+      "broadcast_time": "600",
+      "icon": "TV1",
+      "icon_index": 2
+    },
+    "talk": {
+      "name": "The Queen of Sauce",
+      "channel_id": "queen_of_sauce",
+      "broadcast_day": [0, 3, 6],
+      "broadcast_time": "600",
+      "icon": "TV2",
+      "icon_index": 3
+    },
+    "eat": {
+      "name": "The Queen of Sauce (Cooking)",
+      "channel_id": "queen_of_sauce_cooking",
+      "broadcast_day": [0, 3, 6],
+      "broadcast_time": "600",
+      "icon": "TV2",
+      "icon_index": 3
+    }
+  },
+  "mail": {
+    "trigger_conditions": [
+      "day", "season", "year", "weather", "relationship", "mail_received",
+      "location", "money", "item_owned", "conversation_topic"
+    ],
+    "mail_types": {
+      "letter": {
+        "fields": ["text", "attachment", "letter_t", "Which"]
+      },
+      "short": {
+        "fields": ["text"]
+      },
+      "realprint": {
+        "fields": ["text", "item", "item_t", "quantity"]
+      }
+    }
+  },
+  "shops": {
+    "shop_conditions": [
+      "Season", "Year", "Day", "Weather", "Money", "HasItem",
+      "Relationship", "Site", "Time", "Friendship_Rank"
+    ],
+    "purchase_requirements": [
+      "Season", "Year", "Day", "Weather", "Money", "HasItem",
+      "Relationship", "Site", "Time"
+    ],
+    "available_stock": {
+      "Daily": "stock refreshes every day",
+      "Weekly": "stock refreshes every Sunday",
+      "Infinite": "always available"
+    }
+  },
+  "festivals": {
+    "egg_festival": {"day": 13, "season": "spring"},
+    "flower_dance": {"day": 24, "season": "spring"},
+    "luau": {"day": 11, "season": "summer"},
+    "dance_of_the_moonlight_jellies": {"day": 28, "season": "summer"},
+    "jellies_festival": {"day": 3, "season": "summer"},
+    "stardew_valley_fair": {"day": 16, "season": "fall"},
+    "spirit_eve": {"day": 27, "season": "fall"},
+    "festival_of_ice": {"day": 8, "season": "winter"},
+    "night_market": {"day": 15, "season": "winter"},
+    "bowling": {"day": 25, "season": "winter"}
+  },
+  "locations": [
+    "Farm", "FarmHouse", "Town", "Mountain", "BusStop", "Beach",
+    "Forest", "Mine", "Mine Shaft", "Sewer", "Desert", "Hospital",
+    "Saloon", "GeneralStore", "Barn", "Coop", "Greenhouse",
+    "WizardTower", "Railyard", "Temp", "Tent", "SpiderCave"
+  ],
+  "npcs": [
+    "Abigail", "Alex", "Caroline", "Clint", "Demetrius", "Emily",
+    "Evelyn", "George", "Gus", "Haley", "Harvey", "Jas", "Jodi",
+    "Kent", "Leah", "Lewis", "Linus", "Marnie", "Maru", "Pam",
+    "Penny", "Pierre", "Robin", "Sam", "Sandy", "Sebastian",
+    "Shane", "Vincent", "Willy", "Wizard"
+  ],
+  "seasons": ["spring", "summer", "fall", "winter"],
+  "weather": ["sunny", "rainy", "snowy", "windy", "stormy", "Festival", "Snow"]
+}

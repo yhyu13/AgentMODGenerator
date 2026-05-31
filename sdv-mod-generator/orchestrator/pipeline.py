@@ -1,47 +1,53 @@
-"""LangGraph pipeline — real implementation."""
+"""LangGraph pipeline — game-agnostic, pack-based."""
 import structlog
 from langgraph.graph import END, StateGraph
 
-from generators.base import GeneratorInput
+from generators.core import GeneratorInput
 from generators.packager import package as packager_func
 from orchestrator.state import PipelineState
 from orchestrator.router import route
 from quality.gate_t1 import run_t1
 from quality.gate_t2 import run_t2
-from generators.registry import get as get_generator
+from generators.core import get_game_pack
 
 logger = structlog.get_logger()
 
 
 def node_route(state: PipelineState) -> PipelineState:
-    """Route prompt to generators."""
+    """Route prompt to game pack and phase/generators."""
     logger.info("pipeline.routing", request_id=state.request_id, prompt=state.prompt)
-    phase, hint = route(state.prompt)
-    state.phase = phase
-    state.generators = hint["generators"]
+    _, hint = route(state.prompt)
+    state.game = hint.get("game", "stardew_valley")
+    state.phase = hint.get("phase", "shop_channel")
+    state.generators = hint.get("generators", [])
     state.hint = hint
     state.status = "routing"
     logger.info(
         "pipeline.routing.done",
         request_id=state.request_id,
-        phase=phase,
+        game=state.game,
+        phase=state.phase,
         generators=state.generators,
     )
     return state
 
 
-def node_generate(state: PipelineState) -> PipelineState:
-    """Run each generator in execution_order from hint."""
-    logger.info("pipeline.generating", request_id=state.request_id, generators=state.generators)
+async def node_generate(state: PipelineState) -> PipelineState:
+    """Run each generator in execution_order from the game pack."""
+    logger.info("pipeline.generating", request_id=state.request_id, game=state.game, generators=state.generators)
     state.status = "generating"
 
-    # Use execution_order from hint if present, otherwise fall back to generators list
-    execution_order: list[str] = state.hint.get("execution_order", state.generators)
+    pack = get_game_pack(state.game)
+    if pack is None:
+        logger.error("pipeline.unknown_game", request_id=state.request_id, game=state.game)
+        state.errors.append(f"Unknown game: {state.game}")
+        state.status = "failed"
+        return state
 
-    for gen_name in execution_order:
-        gen_cls = get_generator(gen_name)
+    for gen_name in state.generators:
+        gen_cls = pack.get_generator(gen_name, state.phase)
         if gen_cls is None:
-            logger.warning("pipeline.generator_not_found", request_id=state.request_id, generator=gen_name)
+            logger.warning("pipeline.generator_not_found", request_id=state.request_id, generator=gen_name, game=state.game)
             state.errors.append(f"Generator not found: {gen_name}")
             continue
 
@@ -50,9 +56,10 @@ def node_generate(state: PipelineState) -> PipelineState:
                 "prompt": state.prompt,
                 "hint": state.hint,
                 "request_id": state.request_id,
+                "game": state.game,
             }
             gen = gen_cls()
-            output = gen.generate(inp)
+            output = await gen.generate(inp)
             state.outputs[gen_name] = output
             logger.info(
                 "pipeline.generator_done",
@@ -67,7 +74,7 @@ def node_generate(state: PipelineState) -> PipelineState:
     return state
 
 
-def node_t1_gate(state: PipelineState) -> PipelineState:
+async def node_t1_gate(state: PipelineState) -> PipelineState:
     """Run Tier 1 deterministic checks."""
     logger.info("pipeline.t1_gate", request_id=state.request_id)
     state.status = "t1_gating"
@@ -85,12 +92,12 @@ def node_t1_gate(state: PipelineState) -> PipelineState:
     return state
 
 
-def node_t2_gate(state: PipelineState) -> PipelineState:
+async def node_t2_gate(state: PipelineState) -> PipelineState:
     """Run Tier 2 LLM judge (advisory only — never blocks)."""
     logger.info("pipeline.t2_gate", request_id=state.request_id)
     state.status = "t2_gating"
 
-    result = run_t2(state.request_id, state.outputs)
+    result = await run_t2(state.request_id, state.outputs)
     state.t2_passed = result.passed
     state.t2_score = result.score
     state.t2_feedback = result.feedback
@@ -137,7 +144,6 @@ def build_graph() -> StateGraph:
     builder.add_edge("route", "generate")
     builder.add_edge("generate", "t1_gate")
 
-    # Conditional: if T1 failed, stop here; otherwise continue to T2
     def t1_should_continue(state: PipelineState) -> str:
         if state.status == "failed":
             return "end"
@@ -158,7 +164,6 @@ def build_graph() -> StateGraph:
     return builder.compile()
 
 
-# Singleton graph instance
 _graph = None
 
 
@@ -179,5 +184,4 @@ async def run_pipeline(request_id: str, user_id: str, prompt: str) -> PipelineSt
     )
     logger.info("pipeline.start", request_id=request_id, user_id=user_id, prompt=prompt)
     result_dict = await graph.ainvoke(initial_state)
-    # LangGraph returns a dict; reconstruct PipelineState for type safety
     return PipelineState(**result_dict)

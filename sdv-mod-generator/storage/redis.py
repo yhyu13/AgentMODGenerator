@@ -1,7 +1,6 @@
 """Redis storage — async aioredis."""
 import json
 import os
-from typing import Any
 
 import structlog
 import redis.asyncio as redis

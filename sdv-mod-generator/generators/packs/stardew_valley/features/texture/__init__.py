@@ -1,9 +1,8 @@
-"""Texture replacement generator — real implementation."""
-import re
-
-from generators.base import BaseGenerator, GeneratorInput, GeneratorOutput
-from llm.client import get_client
+"""Texture replacement generator for Stardew Valley."""
 from pydantic import BaseModel
+
+from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
+from llm.client import get_client
 
 
 class _SourceRect(BaseModel):
@@ -22,7 +21,8 @@ class _TextureSpec(BaseModel):
 
 class TextureGenerator(BaseGenerator):
     name = "texture_generator"
-    phase = "p0_texture"
+    phase = "texture"
+    game = "stardew_valley"
 
     SYSTEM_PROMPT = """You are a texture replacement expert for Stardew Valley.
 Given an object name or sprite description, return:
@@ -30,23 +30,15 @@ Given an object name or sprite description, return:
 2. The source rectangle coordinates (x, y, width, height)
 3. The target edit action
 
-Respond in JSON with this schema:
-{
-  "sprite_sheet": "string",
-  "source_rect": {"x": int, "y": int, "width": int, "height": int},
-  "target_file": "string",
-  "target_rect": {"x": int, "y": int, "width": int, "height": int}
-}"""
+Respond with valid JSON."""
 
-    def generate(self, inp: GeneratorInput) -> GeneratorOutput:
-        prompt = inp["prompt"]
+    async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
-
-        client = get_client()
-        llm_prompt = f"User wants to replace texture: {prompt}\nReturn JSON with sprite_sheet, source_rect, target_file, target_rect."
+        llm_prompt = f'User wants to replace texture: {inp["prompt"]}\nReturn JSON with sprite_sheet, source_rect, target_file, target_rect.'
 
         try:
-            result = client.complete_with_structured_output(
+            client = get_client()
+            result = await client.complete_with_structured_output(
                 prompt=llm_prompt,
                 output_schema=_TextureSpec,
                 system=self.SYSTEM_PROMPT,
@@ -89,7 +81,6 @@ Respond in JSON with this schema:
         if not content:
             errors.append("texture_generator: content.json missing")
             return errors
-        changes = content.get("Changes", [])
-        if not changes:
+        if not content.get("Changes"):
             errors.append("texture_generator: no changes in content.json")
         return errors

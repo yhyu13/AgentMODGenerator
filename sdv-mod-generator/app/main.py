@@ -1,12 +1,12 @@
 """FastAPI application entry point."""
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Request
 
 from app.api.routes import router as api_router
 from app.api.schemas import GenerateRequest, GenerateResponse
@@ -42,7 +42,28 @@ async def lifespan(app: FastAPI):
         await init_db()
     except Exception as exc:
         logger.warning("startup.init_db.skipped", reason=str(exc))
+
+    bot_task: asyncio.Task | None = None
+    from app.config import get_config
+    if get_config().discord_bot_token:
+        from app.discord.bot import start_bot
+        bot_task = asyncio.create_task(start_bot())
+        logger.info("startup.discord_bot.started")
+
     yield
+
+    if bot_task:
+        from app.discord.bot import get_bot
+        bot = get_bot()
+        if bot:
+            await bot.close()
+        bot_task.cancel()
+        try:
+            await bot_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("startup.discord_bot.stopped")
+
     try:
         from storage.postgres import close_pool
         await close_pool()
@@ -53,6 +74,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SDV Mod Generator", version="0.1.0", lifespan=lifespan)
 
 app.include_router(api_router)
+
+
+@app.post("/webhooks/discord")
+async def discord_webhook(request: Request) -> dict[str, Any]:
+    from app.discord.webhook import handle_interaction
+    return await handle_interaction(request)
 
 
 @app.get("/health")

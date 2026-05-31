@@ -1,0 +1,108 @@
+{
+  "actions": {
+    "Load": {
+      "description": "Load a JSON file as a content patch",
+      "fields": {
+        "Target": {"type": "string", "required": true, "example": "\"Data/Locations\""},
+        "Entries": {"type": "object", "required": true, "example": "{\"Farm\": {...}}"}
+      }
+    },
+    "EditData": {
+      "description": "Edit existing game data records",
+      "fields": {
+        "Target": {"type": "string", "required": true, "example": "\"Data/ObjectInformation\""},
+        "Entries": {"type": "object", "required": false, "example": "{\"72\": \"True Stardrop Herb/Medium/4/5/-1/Farming 7/You found a medium rare herb!/ues/Artisan 8/This herb...\""},
+        "MoveEntries": {"type": "object", "required": false},
+        "DeleteEntries": {"type": "array", "required": false},
+        "PatchKeys": {"type": "array", "required": false}
+      }
+    },
+    "EditMap": {
+      "description": "Edit map properties and tiles",
+      "fields": {
+        "Target": {"type": "string", "required": true, "example": "\"Maps/Farm\""},
+        "MapTiles": {"type": "array", "required": false},
+        "MapProperties": {"type": "object", "required": false},
+        "AddWarps": {"type": "array", "required": false},
+        "RemoveWarps": {"type": "array", "required": false}
+      }
+    },
+    "EditImage": {
+      "description": "Replace or patch texture images",
+      "fields": {
+        "Target": {"type": "string", "required": true, "example": "\"Characters/Abigail\""},
+        "FromFile": {"type": "string", "required": false},
+        "FromArea": {"type": "object", "required": false},
+        "ToArea": {"type": "object", "required": false},
+        "PatchMode": {"type": "string", "required": false, "AllowValues": ["Replace", "Overlay"]}
+      }
+    },
+    "EditMapTileProperty": {
+      "description": "Change tile property at specific coordinates",
+      "fields": {
+        "Target": {"type": "string", "required": true},
+        "Layer": {"type": "string", "required": true, "example": "\"Back\""},
+        "X": {"type": "integer", "required": true},
+        "Y": {"type": "integer", "required": true},
+        "SetFields": {"type": "object", "required": true}
+      }
+    },
+    "EditMachine": {
+      "description": "Configure machine input/output",
+      "fields": {
+        "Target": {"type": "string", "required": true, "example": "\"(BC) 24\""},
+        "MinutesUntilReady": {"type": "integer", "required": false},
+        "Output": {"type": "string", "required": false}
+      }
+    },
+    "EditObject": {
+      "description": "Modify object/item properties",
+      "fields": {
+        "Target": {"type": "string", "required": true, "example": "\"72\""},
+        "DisplayName": {"type": "string", "required": false},
+        "Description": {"type": "string", "required": false},
+        "Price": {"type": "integer", "required": false},
+        "Edibility": {"type": "integer", "required": false},
+        "Type": {"type": "string", "required": false}
+      }
+    },
+    "ReplaceObject": {
+      "description": "Replace an existing object with another",
+      "fields": {
+        "ObjectId": {"type": "integer", "required": true},
+        "WithObjectId": {"type": "integer", "required": true}
+      }
+    },
+    "GlobalScript": {
+      "description": "Execute a custom C# script",
+      "fields": {
+        "Source": {"type": "string", "required": true},
+        "When": {"type": "object", "required": false}
+      }
+    },
+    "SpecialItem": {
+      "description": "Add special items to the game",
+      "fields": {
+        "Type": {"type": "string", "required": true},
+        "Name": {"type": "string", "required": true}
+      }
+    }
+  },
+  "condition_operators": {
+    "ComparisonOperators": [">", "<", "=", "!=", ">=", "<="],
+    "LogicalOperators": ["AND", "OR", "NOR"]
+  },
+  "when_fields": [
+    "Season", "Year", "Day", "DayOfMonth", "Weather", "Time",
+    "Money", "PlayerGender", "HasFlag", "HasItem", "HasMoney",
+    "Relationship", "ConversationTopic", "Location", "HasSeenEvent",
+    "MailReceived", "Mailbox", "Stats", "SkillLevel", "Quest"
+  ],
+  "patch_modes": [
+    "Replace", "Overlay", "Add"
+  ],
+  "content_pack_for": {
+    "unique_id": "Pathoschild.ContentPatcher",
+    "minimum_version": "1.29.0"
+  }
+}

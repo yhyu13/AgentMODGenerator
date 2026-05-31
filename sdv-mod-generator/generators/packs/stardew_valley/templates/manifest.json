@@ -1,0 +1,33 @@
+{
+  "Format": "1.29.0",
+  "ConfigSchema": {
+    "{{Enabled_key}}": {
+      "AllowValues": ["true", "false"],
+      "Default": "true",
+      "Description": "{{Enabled_desc}}"
+    },
+    "{{DiscountRate_key}}": {
+      "AllowValues": ["0.5", "0.75", "1.0"],
+      "Default": "1.0",
+      "Description": "{{DiscountRate_desc}}"
+    }
+  },
+  "UniqueID": "{{UniqueID}}",
+  "Name": "{{ModName}}",
+  "Author": "{{Author}}",
+  "Version": "{{Version}}",
+  "Description": "{{Description}}",
+  "ContentPackFor": {
+    "UniqueID": "Pathoschild.ContentPatcher",
+    "MinimumVersion": "1.29.0"
+  },
+  "Dependencies": [
+    {{#each Dependencies}}
+    {
+      "UniqueID": "{{this.UniqueID}}"{{#if this.MinimumVersion}},
+      "MinimumVersion": "{{this.MinimumVersion}}"{{/if}}{{#if this.IsRequired}},
+      "IsRequired": {{this.IsRequired}}{{/if}}
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ]
+}
