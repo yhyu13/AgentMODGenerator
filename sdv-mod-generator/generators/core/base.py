@@ -19,7 +19,7 @@ class GeneratorInput(TypedDict):
 @dataclass
 class GeneratorOutput:
     """Output produced by a generator — game-agnostic."""
-    files: dict[str, dict] = field(default_factory=dict)
+    files: dict[str, dict | str] = field(default_factory=dict)
     assets: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 

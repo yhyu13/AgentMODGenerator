@@ -16,7 +16,14 @@ class Config:
     discord_bot_token: str = os.getenv("DISCORD_BOT_TOKEN", "")
     discord_app_id: str = os.getenv("DISCORD_APP_ID", "")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    api_key: str = os.getenv("API_KEY", "")
+
+
+_config: Config | None = None
 
 
 def get_config() -> Config:
-    return Config()
+    global _config
+    if _config is None:
+        _config = Config()
+    return _config

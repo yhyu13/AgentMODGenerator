@@ -20,6 +20,7 @@ class PipelineState:
     zip_key: str | None = None
     t1_passed: bool = True
     t2_passed: bool = True
+    t2_available: bool = True
     t2_score: int = 0
     t2_feedback: str = ""
     status: Literal[

@@ -11,6 +11,7 @@ logger = structlog.get_logger()
 
 @dataclass
 class T2Result:
+    available: bool
     passed: bool
     score: int
     feedback: str = ""
@@ -32,15 +33,15 @@ async def run_t2(request_id: str, outputs: dict[str, GeneratorOutput]) -> T2Resu
         score, feedback = await _llm_judge(request_id, outputs, client)
         passed = score >= 7
         logger.info("quality.t2.done", request_id=request_id, score=score, passed=passed)
-        return T2Result(passed=passed, score=score, feedback=feedback)
+        return T2Result(available=True, passed=passed, score=score, feedback=feedback)
     except RuntimeError as exc:
         if "No LLM provider" in str(exc):
             logger.info("quality.t2.skipped.no_client", request_id=request_id)
-            return T2Result(passed=True, score=10, feedback="[T2 judge skipped: no LLM provider configured]")
+            return T2Result(available=False, passed=True, score=10, feedback="[T2 judge skipped: no LLM provider configured]")
         raise
     except Exception as exc:
         logger.error("quality.t2.error", request_id=request_id, error=str(exc))
-        return T2Result(passed=True, score=10, feedback=f"[T2 judge unavailable: {exc}]")
+        return T2Result(available=False, passed=True, score=0, feedback=f"[T2 judge unavailable: {exc}]")
 
 
 async def _llm_judge(request_id: str, outputs: dict[str, GeneratorOutput], client: Any) -> tuple[int, str]:

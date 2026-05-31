@@ -77,7 +77,8 @@ class TestT2Gate:
         assert "no LLM" in result.feedback
 
     def test_t2_result_dataclass(self):
-        result = T2Result(passed=True, score=8, feedback="good mod")
+        result = T2Result(available=True, passed=True, score=8, feedback="good mod")
         assert result.passed is True
         assert result.score == 8
         assert result.feedback == "good mod"
+        assert result.available is True

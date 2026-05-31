@@ -39,6 +39,16 @@ def _build_schema_dict(output_schema: type) -> dict[str, Any]:
     return schema_dict
 
 
+def _strip_code_fence(content: str) -> str:
+    content = content.strip()
+    if content.startswith("```"):
+        parts = content.split("```", 2)
+        if len(parts) >= 3:
+            content = parts[1]
+            content = content.lstrip("json").strip()
+    return content
+
+
 class OpenAIClient:
     def __init__(
         self,
@@ -63,7 +73,8 @@ class OpenAIClient:
                 messages=messages,
                 **kwargs,
             )
-            return response.choices[0].message.content or ""
+            content = response.choices[0].message.content or ""
+            return content
         except openai.RateLimitError:
             raise RateLimitError("OpenAI rate limit exceeded")
         except openai.AuthenticationError:
@@ -89,14 +100,43 @@ class OpenAIClient:
                 },
                 **kwargs,
             )
-            content = response.choices[0].message.content or ""
+            raw_content = response.choices[0].message.content or ""
+            content = _strip_code_fence(raw_content)
             return json.loads(content)
+        except (openai.BadRequestError, openai.APIError) as exc:
+            if "json_schema" in str(exc) or "response_format" in str(exc).lower():
+                return await self._complete_with_fallback(prompt, output_schema, system, **kwargs)
+            raise
+        except json.JSONDecodeError as exc:
+            raise LLMError(f"OpenAI JSON decode error: {exc}, raw response: {raw_content[:500]}") from exc
         except openai.RateLimitError:
             raise RateLimitError("OpenAI rate limit exceeded")
         except openai.AuthenticationError:
             raise AuthError("OpenAI authentication failed")
         except Exception as exc:
             raise LLMError(f"OpenAI structured output error: {exc}") from exc
+
+    async def _complete_with_fallback(
+        self, prompt: str, output_schema: type, system: str | None, **kwargs
+    ) -> Any:
+        schema_dict = _build_schema_dict(output_schema)
+        schema_json = json.dumps(schema_dict, indent=2)
+        full_prompt = f"""{prompt}
+
+Respond with valid JSON matching this schema:
+{schema_json}"""
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": full_prompt})
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            **kwargs,
+        )
+        raw_content = response.choices[0].message.content or ""
+        content = _strip_code_fence(raw_content)
+        return json.loads(content)
 
 
 class AnthropicClient:
@@ -113,10 +153,11 @@ class AnthropicClient:
         self._model = model or os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
     async def complete(self, prompt: str, system: str | None = None, **kwargs) -> str:
+        max_tokens = kwargs.pop("max_tokens", 4096)
         try:
             response = await self._client.messages.create(
                 model=self._model,
-                max_tokens=4096,
+                max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": prompt}],
                 **kwargs,
@@ -139,7 +180,8 @@ class AnthropicClient:
 Respond with valid JSON matching this schema:
 {schema_json}"""
         text = await self.complete(full_prompt, system=system, **kwargs)
-        return json.loads(text)
+        content = _strip_code_fence(text)
+        return json.loads(content)
 
 
 def get_client() -> CompletionClient:

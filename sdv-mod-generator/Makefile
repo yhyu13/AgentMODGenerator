@@ -1,4 +1,4 @@
-.PHONY: install install-test test lint clean build run
+.PHONY: install install-test test lint clean build run stop
 
 VENV := ../.venv
 PYTHON := $(VENV)/bin/python
@@ -36,4 +36,7 @@ build: test lint
 	@echo "Build passed — tests + lint green"
 
 run:
-	PYTHONPATH=$(PYTHONPATH) $(UVICORN) sdv-mod-generator.app.main:app --reload --port 8000
+	ALL_PROXY=socks5://127.0.0.1:1089 HTTPS_PROXY=http://127.0.0.1:8889 HTTP_PROXY=http://127.0.0.1:8889 PYTHONPATH=$(PYTHONPATH) $(UVICORN) app.main:app --reload --port 8000
+
+stop:
+	pkill -f "uvicorn app.main:app" || true

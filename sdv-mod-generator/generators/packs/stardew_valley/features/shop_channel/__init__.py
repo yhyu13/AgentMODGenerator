@@ -1,11 +1,14 @@
 """Stardew Valley shop channel feature generators."""
-from pydantic import BaseModel
+import structlog
+from pydantic import BaseModel, field_validator
 
 from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
 from generators.llm_utils import (
     generate_structured,
     llm_system_prompt,
 )
+
+logger = structlog.get_logger()
 
 
 class ManifestOutput(BaseModel):
@@ -48,6 +51,22 @@ class CatalogPreviewOutput(BaseModel):
 class TriggerLogicOutput(BaseModel):
     on_shop_open: list[dict[str, str]]
     on_shop_purchase: list[dict[str, str]]
+
+
+class RealismDamageOutput(BaseModel):
+    damage_multiplier: float
+    price_scaling: dict | None = None
+
+    @field_validator("damage_multiplier")
+    @classmethod
+    def validate_damage_multiplier(cls, v: float) -> float:
+        if not 0.1 <= v <= 5.0:
+            return max(0.1, min(5.0, v))
+        return v
+
+
+def _sanitize_key(key: str) -> str:
+    return "".join(c for c in key if c.isalnum() or c in "_-") or "mail"
 
 
 _MANIFEST_FALLBACK = {
@@ -98,7 +117,7 @@ Respond with ONLY valid JSON matching the expected schema.'''
             result = await generate_structured(
                 prompt, ManifestOutput,
                 system=llm_system_prompt(),
-                max_tokens=1024,
+                max_tokens=2048,
             )
             m = ManifestOutput(**result)
             slug = m.unique_id.lower().replace(" ", "_").replace("-", "_")
@@ -113,7 +132,8 @@ Respond with ONLY valid JSON matching the expected schema.'''
                 "ConfigSchema": m.config_schema,
             })
             out.metadata["mod_slug"] = slug
-        except Exception:
+        except Exception as exc:
+            logger.error("manifest_generator.failed", error=str(exc))
             out.add_file("manifest.json", _MANIFEST_FALLBACK)
         return out
 
@@ -136,11 +156,12 @@ class ShopItemPoolGenerator(BaseGenerator):
 
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
-        items = _get_sdv_item_names()
+        item_names = _get_sdv_item_names()
+        valid_items = set(item_names)
         prompt = f'''Create a Stardew Valley shop item pool for: "{inp["prompt"]}"
 
 Use ONLY valid SDV item names from this list (pick 8-12 items):
-{", ".join(items[:40])}
+{", ".join(item_names[:40])}
 
 For each item provide:
 - ItemType: "Object" or "BigCraftable"
@@ -152,14 +173,29 @@ For each item provide:
             result = await generate_structured(
                 prompt, ShopItemPoolOutput,
                 system=llm_system_prompt(),
-                max_tokens=1536,
+                max_tokens=2048,
             )
             pool = ShopItemPoolOutput(**result)
+            valid_item_names: list[str] = []
+            invalid_items: list[str] = []
+            for item in pool.items:
+                if item["ItemName"] in valid_items:
+                    valid_item_names.append(item["ItemName"])
+                else:
+                    invalid_items.append(item["ItemName"])
+            if invalid_items:
+                logger.warning("shop_item_pool.invalid_items", invalid=invalid_items)
+            if not valid_item_names:
+                logger.warning("shop_item_pool.no_valid_items")
+                out.add_file("Data/Shops.tsv", self._fallback_tsv())
+                return out
             lines = ["ItemType\tItemName\tItemName2\tPrice\tStock"]
             for item in pool.items:
-                lines.append(f"{item['ItemType']}\t{item['ItemName']}\t\t{item['Price']}\t{item.get('Stock', 1)}")
+                if item["ItemName"] in valid_item_names:
+                    lines.append(f"{item['ItemType']}\t{item['ItemName']}\t\t{item['Price']}\t{item.get('Stock', 1)}")
             out.add_file("Data/Shops.tsv", "\n".join(lines))
-        except Exception:
+        except Exception as exc:
+            logger.error("shop_item_pool_generator.failed", error=str(exc))
             out.add_file("Data/Shops.tsv", self._fallback_tsv())
         return out
 
@@ -200,11 +236,12 @@ Each channel needs:
             result = await generate_structured(
                 prompt, TVChannelOutput,
                 system=llm_system_prompt(),
-                max_tokens=1024,
+                max_tokens=2048,
             )
             channels = TVChannelOutput(**result).channels
             out.add_file("data/tv_channels.json", {"channels": channels})
-        except Exception:
+        except Exception as exc:
+            logger.error("tv_channel_generator.failed", error=str(exc))
             out.add_file("data/tv_channels.json", {
                 "channels": [{"Name": "Shopping Network", "ChannelID": "shopping",
                              "Description": "Daily shopping deals!", "IconSheet": "Television", "IconIndex": 0}]
@@ -212,7 +249,13 @@ Each channel needs:
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
-        return []
+        errors = []
+        channels_data = output.files.get("data/tv_channels.json")
+        if not channels_data:
+            errors.append("tv_channel_generator: data/tv_channels.json missing")
+        elif "channels" not in channels_data:
+            errors.append("tv_channel_generator: channels key missing")
+        return errors
 
 
 class MailSystemGenerator(BaseGenerator):
@@ -236,9 +279,11 @@ Keep brief and in-character.'''
                 max_tokens=512,
             )
             mail = MailOutput(**result)
-            out.add_file(f"mail/{mail.mail_key}.json", {mail.mail_key: mail.text})
-            out.metadata["mail_key"] = mail.mail_key
-        except Exception:
+            safe_key = _sanitize_key(mail.mail_key)
+            out.add_file(f"mail/{safe_key}.json", {safe_key: mail.text})
+            out.metadata["mail_key"] = safe_key
+        except Exception as exc:
+            logger.error("mail_system_generator.failed", error=str(exc))
             out.add_file("mail/tv_shopping_broadcast.json", {
                 "tv_shopping_broadcast": "Dear @, ^Welcome to the TV Shopping Network!^  - The TV Shopping Network"
             })
@@ -266,7 +311,11 @@ class ItemSpritesGenerator(BaseGenerator):
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
-        return []
+        errors = []
+        sprite_file = output.files.get("assets/sprites/shop_logo.json")
+        if not sprite_file:
+            errors.append("item_sprites_generator: assets/sprites/shop_logo.json missing")
+        return errors
 
 
 class UIAssetsGenerator(BaseGenerator):
@@ -284,7 +333,11 @@ class UIAssetsGenerator(BaseGenerator):
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
-        return []
+        errors = []
+        ui_file = output.files.get("assets/ui/catalog_background.json")
+        if not ui_file:
+            errors.append("ui_assets_generator: assets/ui/catalog_background.json missing")
+        return errors
 
 
 class CatalogPreviewGenerator(BaseGenerator):
@@ -302,7 +355,7 @@ Generate 4-6 items with name, price, and a 1-line SDV-style description.'''
             result = await generate_structured(
                 prompt, CatalogPreviewOutput,
                 system=llm_system_prompt(),
-                max_tokens=1024,
+                max_tokens=2048,
             )
             catalog = CatalogPreviewOutput(**result)
             out.add_file("catalog_preview.json", {
@@ -310,7 +363,8 @@ Generate 4-6 items with name, price, and a 1-line SDV-style description.'''
                 "broadcast_day": "Sunday",
                 "items": catalog.items,
             })
-        except Exception:
+        except Exception as exc:
+            logger.error("catalog_preview_generator.failed", error=str(exc))
             out.add_file("catalog_preview.json", {
                 "shop_name": "TV Shopping Network",
                 "broadcast_day": "Sunday",
@@ -321,7 +375,13 @@ Generate 4-6 items with name, price, and a 1-line SDV-style description.'''
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
-        return []
+        errors = []
+        preview = output.files.get("catalog_preview.json")
+        if not preview:
+            errors.append("catalog_preview_generator: catalog_preview.json missing")
+        elif "items" not in preview:
+            errors.append("catalog_preview_generator: items key missing")
+        return errors
 
 
 class RealismDamageGenerator(BaseGenerator):
@@ -338,22 +398,18 @@ Include DamageMultiplier (1.0 = normal) and optional PriceScaling. Keep close to
         try:
             result = await generate_structured(
                 prompt,
-                {"type": "object", "properties": {
-                    "damage_multiplier": {"type": "number"},
-                    "price_scaling": {"type": "object", "properties": {
-                        "enabled": {"type": "boolean"},
-                        "factor": {"type": "number"},
-                    }},
-                }, "required": ["damage_multiplier"]},
+                RealismDamageOutput,
                 system=llm_system_prompt(),
                 max_tokens=512,
             )
+            dmg = RealismDamageOutput(**result)
             out.add_file("data/damage_modifiers.json", {
                 "ModID": "TVShoppingNetwork",
-                "DamageMultiplier": result.get("damage_multiplier", 1.0),
-                "PriceScaling": result.get("price_scaling", {"enabled": False, "factor": 1.0}),
+                "DamageMultiplier": dmg.damage_multiplier,
+                "PriceScaling": dmg.price_scaling or {"enabled": False, "factor": 1.0},
             })
-        except Exception:
+        except Exception as exc:
+            logger.error("realism_damage_generator.failed", error=str(exc))
             out.add_file("data/damage_modifiers.json", {
                 "ModID": "TVShoppingNetwork",
                 "DamageMultiplier": 1.0,
@@ -362,7 +418,13 @@ Include DamageMultiplier (1.0 = normal) and optional PriceScaling. Keep close to
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
-        return []
+        errors = []
+        dmg_file = output.files.get("data/damage_modifiers.json")
+        if not dmg_file:
+            errors.append("realism_damage_generator: data/damage_modifiers.json missing")
+        elif "DamageMultiplier" not in dmg_file:
+            errors.append("realism_damage_generator: DamageMultiplier missing")
+        return errors
 
 
 class TriggerLogicGenerator(BaseGenerator):
@@ -381,14 +443,15 @@ Use valid Content Patcher action names only.'''
             result = await generate_structured(
                 prompt, TriggerLogicOutput,
                 system=llm_system_prompt(),
-                max_tokens=1024,
+                max_tokens=2048,
             )
             triggers = TriggerLogicOutput(**result)
             out.add_file("data/trigger_actions.json", {
                 "OnShopOpen": triggers.on_shop_open,
                 "OnShopPurchase": triggers.on_shop_purchase,
             })
-        except Exception:
+        except Exception as exc:
+            logger.error("trigger_logic_generator.failed", error=str(exc))
             out.add_file("data/trigger_actions.json", {
                 "OnShopOpen": [{"Action": "Mail", "Mail": "tv_shopping_broadcast"}],
                 "OnShopPurchase": [{"Action": "PlaySound", "Sound": "purchase"}],
@@ -418,7 +481,7 @@ MinItems/MaxItems (item counts), DiscountRate (0.5/0.75/1.0), PriceVariance (0.0
             result = await generate_structured(
                 prompt, ConfigSchemaOutput,
                 system=llm_system_prompt(),
-                max_tokens=1024,
+                max_tokens=2048,
             )
             cfg = ConfigSchemaOutput(**result)
             out.add_file("config.json", {
@@ -431,7 +494,8 @@ MinItems/MaxItems (item counts), DiscountRate (0.5/0.75/1.0), PriceVariance (0.0
                 "DiscountRate": cfg.discount_rate,
                 "PriceVariance": cfg.price_variance,
             })
-        except Exception:
+        except Exception as exc:
+            logger.error("config_schema_generator.failed", error=str(exc))
             out.add_file("config.json", {
                 "Enabled": True, "ShopDay": 0, "ShopStartHour": 6, "ShopEndHour": 22,
                 "MinItems": 3, "MaxItems": 8, "DiscountRate": 1.0, "PriceVariance": 0.2,

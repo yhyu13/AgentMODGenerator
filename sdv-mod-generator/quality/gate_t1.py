@@ -24,8 +24,11 @@ def run_t1(request_id: str, outputs: dict[str, GeneratorOutput]) -> T1Result:
     - Shop TSV has correct column structure
     - No empty required fields
     """
-    logger.info("quality.t1.run", request_id=request_id)
+    logger.info("quality.t1.run", request_id=request_id, output_count=len(outputs))
     all_errors: list[str] = []
+
+    if not outputs:
+        all_errors.append("t1_gate.no_generators: pipeline produced no outputs")
 
     for gen_name, output in outputs.items():
         errors = _validate_generator_output(gen_name, output)
@@ -96,8 +99,8 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
             else:
                 header = lines[0].split("\t")
                 expected = ["ItemType", "ItemName", "ItemName2", "Price", "Stock"]
-                if header[: len(expected)] != expected[: len(header)]:
-                    errors.append(f"shop_item_pool_generator: Data/Shops.tsv header mismatch — got {header}")
+                if header != expected:
+                    errors.append(f"shop_item_pool_generator: Data/Shops.tsv header mismatch — expected {expected}, got {header}")
 
     elif gen_name == "config_schema_generator":
         config = output.files.get("config.json", {})

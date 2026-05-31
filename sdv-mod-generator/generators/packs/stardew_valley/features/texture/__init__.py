@@ -43,10 +43,13 @@ Respond with valid JSON."""
                 output_schema=_TextureSpec,
                 system=self.SYSTEM_PROMPT,
             )
-            sprite_sheet = result.get("sprite_sheet", "")
-            source_rect = result.get("source_rect", {})
-            target_file = result.get("target_file", "")
-            target_rect = result.get("target_rect", {})
+            spec = _TextureSpec(**result)
+            sprite_sheet = spec.sprite_sheet
+            source_rect = {"X": spec.source_rect.x, "Y": spec.source_rect.y,
+                           "Width": spec.source_rect.width, "Height": spec.source_rect.height}
+            target_file = spec.target_file
+            target_rect = {"X": spec.target_rect.x, "Y": spec.target_rect.y,
+                           "Width": spec.target_rect.width, "Height": spec.target_rect.height}
 
             out.add_file("content.json", {
                 "Format": "1.29.0",

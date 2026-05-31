@@ -109,10 +109,16 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
     try:
         from generators.core import get_game_pack
         pack = get_game_pack(game_id)
-        if pack and matched_phase in pack.list_phases():
+        if pack is None:
+            logger.warning("router.pack_not_found", game=game_id, phase=matched_phase)
+            matched_generators = _default_generators_for_phase(matched_phase)
+        elif matched_phase not in pack.list_phases():
+            logger.warning("router.phase_not_in_pack", game=game_id, phase=matched_phase)
+            matched_generators = _default_generators_for_phase(matched_phase)
+        else:
             pg = pack.get_generators(matched_phase)
             matched_generators = pg.execution_order.copy()
-    except Exception as exc:
+    except (ImportError, AttributeError, ValueError, TypeError) as exc:
         logger.warning("router.pack_fallback", game=game_id, phase=matched_phase, error=str(exc))
         matched_generators = _default_generators_for_phase(matched_phase)
 

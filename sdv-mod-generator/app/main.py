@@ -1,6 +1,5 @@
 """FastAPI application entry point."""
 import asyncio
-import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -62,14 +61,23 @@ async def lifespan(app: FastAPI):
     if bot_task:
         from app.discord.bot import get_bot
         bot = get_bot()
-        if bot:
-            await bot.close()
         bot_task.cancel()
+        if bot:
+            try:
+                await bot.close()
+            except Exception:
+                pass
         try:
             await bot_task
         except asyncio.CancelledError:
             pass
         logger.info("startup.discord_bot.stopped")
+
+    try:
+        from storage.redis import close_client
+        await close_client()
+    except Exception:
+        pass
 
     try:
         from storage.postgres import close_pool
@@ -115,7 +123,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
 
         result = await run_pipeline(request_id, req.user_id, req.prompt)
 
-        await update_mod_request_status(request_id, result.status, result.errors)
+        await update_mod_request_status(request_id, result.status)
         await set_pipeline_state(request_id, {
             "status": result.status,
             "errors": result.errors,
@@ -125,7 +133,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
                     "assets": out.assets,
                     "metadata": out.metadata,
                 }
-                for name, out in result.outputs.items()
+                for name, out in (result.outputs or {}).items()
             },
             "t2_feedback": result.t2_feedback,
             "t2_score": result.t2_score,

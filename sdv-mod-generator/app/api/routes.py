@@ -1,8 +1,9 @@
 """API routes — P1-impl with real PostgreSQL + Redis."""
 import structlog
 from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.api.schemas import (
     ModStatusResponse,
@@ -17,6 +18,19 @@ from storage.queries import (
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1", tags=["v1"])
+
+
+async def verify_api_key(x_api_key: Annotated[str | None, Header()] = None) -> str:
+    from app.config import get_config
+    cfg = get_config()
+    if not cfg.api_key:
+        return "anonymous"
+    if not x_api_key or x_api_key != cfg.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+        )
+    return x_api_key
 
 
 @router.get("/mods/{request_id}", response_model=ModStatusResponse)
@@ -34,7 +48,7 @@ async def get_mod_status(request_id: str) -> ModStatusResponse:
             request_id=request_id,
             status=redis_state.get("status", "pending"),
             zip_url=redis_state.get("zip_key"),
-            files_preview=list(redis_state.get("outputs", {}).keys()),
+            files_preview=[f for out in redis_state.get("outputs", {}).values() for f in out.get("files", {}).keys()],
             t1_errors=redis_state.get("errors", []),
             t2_feedback=redis_state.get("t2_feedback"),
             t2_score=redis_state.get("t2_score"),
@@ -94,7 +108,10 @@ async def get_mod_files(request_id: str) -> FilePreviewResponse:
 
 
 @router.get("/users/{user_id}/history", response_model=HistoryResponse)
-async def get_history(user_id: str) -> HistoryResponse:
+async def get_history(
+    user_id: str,
+    _: Annotated[str, Depends(verify_api_key)],
+) -> HistoryResponse:
     """Get generation history for a user."""
     entries = await get_user_history(user_id)
     return HistoryResponse(

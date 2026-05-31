@@ -16,19 +16,28 @@ logger = structlog.get_logger()
 def node_route(state: PipelineState) -> PipelineState:
     """Route prompt to game pack and phase/generators."""
     logger.info("pipeline.routing", request_id=state.request_id, prompt=state.prompt)
-    _, hint = route(state.prompt)
-    state.game = hint.get("game", "stardew_valley")
-    state.phase = hint.get("phase", "shop_channel")
-    state.generators = hint.get("generators", [])
-    state.hint = hint
-    state.status = "routing"
-    logger.info(
-        "pipeline.routing.done",
-        request_id=state.request_id,
-        game=state.game,
-        phase=state.phase,
-        generators=state.generators,
-    )
+    try:
+        _, hint = route(state.prompt)
+        state.game = hint.get("game", "stardew_valley")
+        state.phase = hint.get("phase", "shop_channel")
+        state.generators = hint.get("generators", [])
+        state.hint = hint
+        state.status = "routing"
+        logger.info(
+            "pipeline.routing.done",
+            request_id=state.request_id,
+            game=state.game,
+            phase=state.phase,
+            generators=state.generators,
+        )
+    except Exception as exc:
+        logger.error("pipeline.routing.failed", request_id=state.request_id, error=str(exc))
+        state.errors.append(f"routing failed: {exc}")
+        state.status = "failed"
+        state.game = "stardew_valley"
+        state.phase = "shop_channel"
+        state.generators = []
+        state.hint = {}
     return state
 
 
@@ -71,10 +80,15 @@ async def node_generate(state: PipelineState) -> PipelineState:
             logger.error("pipeline.generator_failed", request_id=state.request_id, generator=gen_name, error=str(exc))
             state.errors.append(f"{gen_name}: {exc}")
 
+    if not state.outputs and state.errors:
+        logger.error("pipeline.no_outputs", request_id=state.request_id, errors=state.errors)
+        state.errors.append("all generators failed: no outputs produced")
+        state.status = "failed"
+
     return state
 
 
-async def node_t1_gate(state: PipelineState) -> PipelineState:
+def node_t1_gate(state: PipelineState) -> PipelineState:
     """Run Tier 1 deterministic checks."""
     logger.info("pipeline.t1_gate", request_id=state.request_id)
     state.status = "t1_gating"
@@ -99,6 +113,7 @@ async def node_t2_gate(state: PipelineState) -> PipelineState:
 
     result = await run_t2(state.request_id, state.outputs)
     state.t2_passed = result.passed
+    state.t2_available = result.available
     state.t2_score = result.score
     state.t2_feedback = result.feedback
 
@@ -123,10 +138,15 @@ def node_package(state: PipelineState) -> PipelineState:
         all_files.update(output.files)
         all_assets.extend(output.assets)
 
-    zip_key = packager_func(state.request_id, all_files, all_assets)
-    state.zip_key = zip_key
-    state.status = "done"
-    logger.info("pipeline.done", request_id=state.request_id, zip_key=zip_key)
+    try:
+        zip_key = packager_func(state.request_id, all_files, all_assets)
+        state.zip_key = zip_key
+        state.status = "done"
+        logger.info("pipeline.done", request_id=state.request_id, zip_key=zip_key)
+    except Exception as exc:
+        logger.error("pipeline.packaging_failed", request_id=state.request_id, error=str(exc))
+        state.errors.append(f"packaging failed: {exc}")
+        state.status = "failed"
     return state
 
 

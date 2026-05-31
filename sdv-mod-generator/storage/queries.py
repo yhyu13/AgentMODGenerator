@@ -1,4 +1,5 @@
 """Database query helpers for mod_requests, mod_outputs, mod_history."""
+import json
 from typing import Any
 
 import structlog
@@ -17,7 +18,6 @@ async def create_mod_request(
     generators: list[str],
     hint: dict,
 ) -> None:
-    import json
     async with get_session() as session:
         await session.execute(
             text("""
@@ -39,7 +39,6 @@ async def create_mod_request(
 async def update_mod_request_status(
     request_id: str,
     status: str,
-    errors: list[str] | None = None,
 ) -> None:
     async with get_session() as session:
         await session.execute(
@@ -61,7 +60,6 @@ async def save_mod_output(
     t2_feedback: str | None,
     t2_score: int | None,
 ) -> None:
-    import json
     async with get_session() as session:
         await session.execute(
             text("""
@@ -79,8 +77,8 @@ async def save_mod_output(
                 "request_id": request_id,
                 "zip_key": zip_key,
                 "zip_url": zip_url,
-                "files_preview": json.dumps(files_preview),
-                "t1_errors": json.dumps(t1_errors),
+                "files_preview": files_preview,
+                "t1_errors": t1_errors,
                 "t2_feedback": t2_feedback,
                 "t2_score": t2_score,
             },

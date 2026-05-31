@@ -8,6 +8,7 @@ import discord
 import structlog
 from discord import app_commands
 from discord import Interaction
+from discord.ext import commands
 
 logger = structlog.get_logger()
 
@@ -16,8 +17,8 @@ _POLL_INTERVAL = 2.0
 _MAX_POLLS = 60
 
 
-def setup_commands(tree: app_commands.CommandTree) -> None:
-    tree.add_command(generate_command)
+def setup_commands(bot: commands.Bot) -> None:
+    bot.tree.add_command(generate_command)
 
 
 @app_commands.command(
@@ -110,9 +111,9 @@ async def _submit_generation(user_id: int, prompt: str) -> str | None:
 
 async def _poll_until_done(request_id: str) -> tuple[str, str | None]:
     headers = {"Accept": "application/json"}
-    for _ in range(_MAX_POLLS):
-        try:
-            async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession() as session:
+        for _ in range(_MAX_POLLS):
+            try:
                 async with session.get(
                     f"{_API_BASE}/v1/mods/{request_id}",
                     headers=headers,
@@ -130,9 +131,9 @@ async def _poll_until_done(request_id: str) -> tuple[str, str | None]:
                         if zip_key and zip_key.startswith("file://"):
                             zip_key = Path(zip_key[7:]).name
                         return status, zip_key
-        except Exception as exc:
-            logger.warning("discord.poll.error", request_id=request_id, error=str(exc))
-        await asyncio.sleep(_POLL_INTERVAL)
+            except Exception as exc:
+                logger.warning("discord.poll.error", request_id=request_id, error=str(exc))
+            await asyncio.sleep(_POLL_INTERVAL)
     return "failed", None
 
 

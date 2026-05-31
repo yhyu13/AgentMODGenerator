@@ -53,20 +53,16 @@ async def generate_structured(
     """Generate structured JSON output via LLM.
 
     Uses OpenAI if ANTHROPIC_API_KEY is not set, otherwise Anthropic.
+    Uses native structured output when available; schema is NOT added
+    to the prompt text since the client handles it via response_format.
     """
     from llm.client import get_client
 
     client = get_client()
-    schema_dict = _build_schema_dict(output_schema)
-
-    full_prompt = f"""{prompt}
-
-Respond with ONLY valid JSON matching this schema:
-{json.dumps(schema_dict, indent=2)}"""
 
     try:
         result = await client.complete_with_structured_output(
-            full_prompt,
+            prompt,
             output_schema,
             system=system,
             max_tokens=max_tokens,
@@ -92,20 +88,17 @@ def generate_text(
         return await client.complete(prompt, system=system, max_tokens=max_tokens)
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(None, lambda: asyncio.run(_run()))
+        return future.result()
     except RuntimeError:
         loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(_run())
-
-
-def _build_schema_dict(schema_cls: type) -> dict[str, Any]:
-    name = schema_cls.__name__
-    if hasattr(schema_cls, "model_json_schema"):
-        return {"name": name, "schema": schema_cls.model_json_schema()}
-    elif hasattr(schema_cls, "schema"):
-        return {"name": name, "schema": schema_cls.schema()}
-    return {"name": name, "schema": {}}
+        try:
+            return loop.run_until_complete(_run())
+        finally:
+            loop.close()
+    else:
+        raise RuntimeError("generate_text cannot be called from an async context; use the async API directly")
 
 
 def llm_system_prompt() -> str:

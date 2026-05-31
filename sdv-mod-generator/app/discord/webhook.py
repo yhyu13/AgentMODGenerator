@@ -14,7 +14,7 @@ _DISCORD_PUBLIC_KEY = os.getenv("DISCORD_PUBLIC_KEY", "")
 
 def verify_signature(body: bytes, signature: str, timestamp: str) -> bool:
     if not _DISCORD_PUBLIC_KEY:
-        return True
+        return False
     if not signature or not timestamp:
         return False
     expected = hmac.new(
@@ -80,7 +80,7 @@ async def _handle_application_command(data: dict[str, Any]) -> dict[str, Any]:
 async def _handle_message_component(data: dict[str, Any]) -> dict[str, Any]:
     component_id = data.get("data", {}).get("custom_id", "")
     if component_id.startswith("poll_status_"):
-        request_id = component_id[len("poll_status_") :]
+        request_id = component_id[len("poll_status_"):]
         from app.discord.connector import get_status
 
         status_data = await get_status(request_id)

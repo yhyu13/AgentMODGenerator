@@ -32,35 +32,41 @@ async def submit_generation(user_id: str, prompt: str, phase: str | None = None)
         return None
 
 
-async def get_status(request_id: str) -> dict[str, Any] | None:
+async def get_status(request_id: str, session: aiohttp.ClientSession | None = None) -> dict[str, Any] | None:
+    own_session = session is None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/v1/mods/{request_id}",
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status == 404:
-                    return None
-                if resp.status != 200:
-                    return None
-                return await resp.json()
+        if own_session:
+            session = aiohttp.ClientSession()
+        async with session.get(
+            f"{_API_BASE}/v1/mods/{request_id}",
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            if resp.status == 404:
+                return None
+            if resp.status != 200:
+                return None
+            return await resp.json()
     except Exception as exc:
         logger.warning("connector.status.error", request_id=request_id, error=str(exc))
         return None
+    finally:
+        if own_session:
+            await session.close()
 
 
 async def poll_until_done(request_id: str, interval: float = 2.0, max_polls: int = 120) -> tuple[str, str | None]:
-    for _ in range(max_polls):
-        status_data = await get_status(request_id)
-        if status_data:
-            status = status_data.get("status", "pending")
-            if status in ("done", "failed"):
-                zip_key = status_data.get("zip_url", "") or ""
-                if zip_key.startswith("file://"):
-                    import posixpath
-                    zip_key = posixpath.basename(zip_key[7:])
-                return status, zip_key
-        await asyncio.sleep(interval)
+    async with aiohttp.ClientSession() as session:
+        for _ in range(max_polls):
+            status_data = await get_status(request_id, session)
+            if status_data:
+                status = status_data.get("status", "pending")
+                if status in ("done", "failed"):
+                    zip_key = status_data.get("zip_url", "") or ""
+                    if zip_key.startswith("file://"):
+                        import posixpath
+                        zip_key = posixpath.basename(zip_key[7:])
+                    return status, zip_key
+            await asyncio.sleep(interval)
     return "failed", None
 
 
