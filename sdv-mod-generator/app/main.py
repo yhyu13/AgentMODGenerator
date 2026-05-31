@@ -157,7 +157,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
         await save_mod_output(
             request_id=request_id,
             zip_key=result.zip_key,
-            zip_url=f"file:///tmp/sdv-mod-generator/outputs/{result.zip_key}" if result.zip_key else None,
+            zip_url=None,
             files_preview=files_preview,
             t1_errors=result.errors,
             t2_feedback=result.t2_feedback,

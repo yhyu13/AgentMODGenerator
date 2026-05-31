@@ -51,10 +51,18 @@ def _normalize_path(path: str) -> str:
     path = path.strip().replace("\\", "/")
     while path.startswith("/"):
         path = path[1:]
+    if ".." in path:
+        raise ValueError(f"Path traversal attempt detected: {path}")
     return path
 
 
+def _validate_zip_key(zip_key: str) -> None:
+    if ".." in zip_key:
+        raise ValueError(f"Invalid zip_key: {zip_key}")
+
+
 def read_zip(zip_key: str) -> dict[str, Any]:
+    _validate_zip_key(zip_key)
     zip_path = Path(_LOCAL_OUTPUT_DIR) / zip_key
     if not zip_path.exists():
         return {}

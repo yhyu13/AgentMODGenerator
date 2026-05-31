@@ -50,7 +50,13 @@ def get_client():
     return _client
 
 
+def _validate_zip_key(zip_key: str) -> None:
+    if ".." in zip_key:
+        raise ValueError(f"Invalid zip_key: {zip_key}")
+
+
 def _local_path(zip_key: str) -> Path:
+    _validate_zip_key(zip_key)
     return Path(_LOCAL_OUTPUT_DIR) / zip_key
 
 
