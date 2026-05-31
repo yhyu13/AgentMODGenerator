@@ -14,6 +14,7 @@ class Config:
     s3_bucket: str = os.getenv("S3_BUCKET", "sdv-mod-generator")
     s3_region: str = os.getenv("S3_REGION", "us-east-1")
     discord_bot_token: str = os.getenv("DISCORD_BOT_TOKEN", "")
+    discord_app_id: str = os.getenv("DISCORD_APP_ID", "")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
 

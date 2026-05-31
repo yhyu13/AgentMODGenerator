@@ -31,6 +31,13 @@ async def start_bot() -> None:
 
     setup_commands(_tree)
 
+    @_client.event
+    async def on_ready() -> None:
+        logger.info("discord.bot.ready", user=str(_client.user))
+        await _tree.sync()
+        logger.info("discord.bot.commands_synced")
+
+    logger.info("discord.bot.starting", app_id=config.discord_app_id or "global")
     await _client.start(token)
 
 

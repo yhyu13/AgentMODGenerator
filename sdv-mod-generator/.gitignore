@@ -1,0 +1,35 @@
+# Environment — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Test / CI
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local dev
+mods/
+*.log
+
+# OS
+.DS_Store
+.idea/
+.vscode/
+
+# LangGraph / pipeline state
+.graph_state/

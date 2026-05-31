@@ -1,9 +1,16 @@
 """FastAPI application entry point."""
 import asyncio
+import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
+
+_dotenv_path = Path(__file__).parent.parent / "config" / ".env"
+load_dotenv(_dotenv_path, override=False)
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
