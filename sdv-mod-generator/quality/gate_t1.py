@@ -60,14 +60,16 @@ def _validate_file(gen_name: str, file_path: str, content: dict | str) -> list[s
     errors: list[str] = []
 
     if file_path.endswith(".json"):
-        if not isinstance(content, dict):
+        if not isinstance(content, (dict, list)):
             if isinstance(content, str):
                 try:
-                    json.loads(content)
+                    parsed = json.loads(content)
+                    if not isinstance(parsed, (dict, list)):
+                        errors.append(f"{gen_name}: {file_path} is not a JSON object or array")
                 except Exception:
-                    errors.append(f"{gen_name}: {file_path} is not a JSON object")
+                    errors.append(f"{gen_name}: {file_path} is not valid JSON")
             else:
-                errors.append(f"{gen_name}: {file_path} is not a JSON object")
+                errors.append(f"{gen_name}: {file_path} is not a JSON object or array")
     elif file_path.endswith(".tsv"):
         if isinstance(content, str):
             lines = content.strip().split("\n")
@@ -119,5 +121,18 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
         mail = output.files.get("mail/tv_shopping_broadcast.json", {})
         if not mail:
             errors.append("mail_system_generator: mail/tv_shopping_broadcast.json missing or empty")
+
+    elif gen_name == "content_json_generator":
+        content = output.files.get("content.json")
+        if not content:
+            errors.append("content_json_generator: content.json missing")
+        elif not isinstance(content, list):
+            errors.append("content_json_generator: content.json must be an array of actions")
+        else:
+            for i, action in enumerate(content):
+                if not isinstance(action, dict):
+                    errors.append(f"content_json_generator: content.json[{i}] is not an object")
+                elif "Action" not in action:
+                    errors.append(f"content_json_generator: content.json[{i}] missing 'Action' field")
 
     return errors

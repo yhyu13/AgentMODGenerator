@@ -3,17 +3,10 @@
 Each generator belongs to a GamePack and produces output for a specific game.
 The pipeline orchestrates across packs, but each pack is self-contained.
 """
+from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TypedDict
-
-
-class GeneratorInput(TypedDict):
-    """Input passed to a generator."""
-    prompt: str
-    hint: dict
-    request_id: str
-    game: str
 
 
 @dataclass
@@ -28,6 +21,15 @@ class GeneratorOutput:
 
     def add_asset(self, path: str) -> None:
         self.assets.append(path)
+
+
+class GeneratorInput(TypedDict):
+    """Input passed to a generator."""
+    prompt: str
+    hint: dict
+    request_id: str
+    game: str
+    prior_outputs: dict[str, GeneratorOutput]
 
 
 class BaseGenerator(ABC):

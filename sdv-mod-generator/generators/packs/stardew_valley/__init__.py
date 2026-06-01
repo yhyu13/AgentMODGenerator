@@ -22,6 +22,7 @@ from generators.packs.stardew_valley.features.shop_channel import (
     RealismDamageGenerator,
     TriggerLogicGenerator,
     ConfigSchemaGenerator,
+    ContentJsonGenerator,
 )
 from generators.packs.stardew_valley.features.texture import TextureGenerator
 
@@ -60,6 +61,7 @@ class StardewValleyPack(GamePack):
                 RealismDamageGenerator,
                 TriggerLogicGenerator,
                 ConfigSchemaGenerator,
+                ContentJsonGenerator,
             ]
             return PhaseGenerators(
                 phase=phase,
@@ -75,6 +77,7 @@ class StardewValleyPack(GamePack):
                     "realism_damage_generator",
                     "trigger_logic_generator",
                     "config_schema_generator",
+                    "content_json_generator",
                 ],
             )
         if phase == "texture":

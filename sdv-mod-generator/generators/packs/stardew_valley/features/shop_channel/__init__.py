@@ -33,6 +33,10 @@ class MailOutput(BaseModel):
     text: str
 
 
+class MailListOutput(BaseModel):
+    mails: list[MailOutput]
+
+
 class ConfigSchemaOutput(BaseModel):
     enabled: bool = True
     shop_day: int = 0
@@ -224,14 +228,16 @@ class TVChannelGenerator(BaseGenerator):
 
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
-        prompt = f'''Create 1-2 Stardew Valley TV channels for: "{inp["prompt"]}"
+        prompt = f'''Create a Stardew Valley TV shopping channel for: "{inp["prompt"]}"
 
-Each channel needs:
-- Name: display name
-- ChannelID: snake_case identifier
-- Description: 1-line
+The channel should be called "TV Shopping Network" or similar.
+Include:
+- Name: display name (e.g. "TV Shopping Network")
+- ChannelID: snake_case identifier (e.g. "tv_shopping_network")
+- Description: 1-2 lines describing the channel
 - IconSheet: "Television" or "TV3"
-- IconIndex: 0-4'''
+- IconIndex: 0-4
+- BroadcastDay: 6 (Saturday only)'''
 
         try:
             result = await generate_structured(
@@ -240,13 +246,30 @@ Each channel needs:
                 max_tokens=2048,
             )
             channels = TVChannelOutput(**result).channels
-            out.add_file("data/tv_channels.json", {"channels": channels})
+            channel = channels[0] if channels else {
+                "Name": "TV Shopping Network",
+                "ChannelID": "tv_shopping_network",
+                "Description": "Weekly special deals on exclusive items!",
+                "IconSheet": "Television",
+                "IconIndex": 0,
+            }
+            channel_id = channel.get("ChannelID", "tv_shopping_network")
+            out.add_file("data/tv_channels.json", {"channels": [channel]})
+            out.metadata["channel_id"] = channel_id
+            out.metadata["channel_name"] = channel.get("Name", "TV Shopping Network")
         except (ValueError, RuntimeError, IOError) as exc:
             logger.error("tv_channel_generator.failed", error=str(exc))
             out.add_file("data/tv_channels.json", {
-                "channels": [{"Name": "Shopping Network", "ChannelID": "shopping",
-                             "Description": "Daily shopping deals!", "IconSheet": "Television", "IconIndex": 0}]
+                "channels": [{
+                    "Name": "TV Shopping Network",
+                    "ChannelID": "tv_shopping_network",
+                    "Description": "Weekly special deals on exclusive items!",
+                    "IconSheet": "Television",
+                    "IconIndex": 0,
+                }]
             })
+            out.metadata["channel_id"] = "tv_shopping_network"
+            out.metadata["channel_name"] = "TV Shopping Network"
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
@@ -266,29 +289,48 @@ class MailSystemGenerator(BaseGenerator):
 
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
-        prompt = f'''Create a Stardew Valley mail letter for: "{inp["prompt"]}"
+        prompt = f'''Create Stardew Valley mail letters for: "{inp["prompt"]}"
 
+Create 2-3 mail letters:
+1. A broadcast announcement mail (contains "broadcast" in the key) that welcomes players
+2. A purchase confirmation mail that delivers the purchased item
+3. A catalogue preview mail sent after first purchase
+
+For each:
 - mail_key: snake_case identifier
-- text: use @ for generic, ^ splits paragraphs, - signs off
+- text: use @ for player name, ^ splits paragraphs, - signs off
+- Use "broadcast" prefix for TV-triggered mail (these auto-show when player watches TV)
 
 Keep brief and in-character.'''
 
         try:
             result = await generate_structured(
-                prompt, MailOutput,
+                prompt, MailListOutput,
                 system=llm_system_prompt(),
-                max_tokens=512,
+                max_tokens=1024,
             )
-            mail = MailOutput(**result)
-            safe_key = _sanitize_key(mail.mail_key)
-            out.add_file(f"mail/{safe_key}.json", {safe_key: mail.text})
-            out.metadata["mail_key"] = safe_key
+            mails = MailListOutput(**result).mails
+            mail_keys = []
+            for mail in mails:
+                safe_key = _sanitize_key(mail.mail_key)
+                out.add_file(f"mail/{safe_key}.json", {safe_key: mail.text})
+                mail_keys.append(safe_key)
+            out.metadata["mail_keys"] = mail_keys
+            out.metadata["broadcast_key"] = next((k for k in mail_keys if "broadcast" in k), mail_keys[0] if mail_keys else "tv_shopping_broadcast")
+            out.metadata["purchase_key"] = next((k for k in mail_keys if "purchase" in k or "delivery" in k), mail_keys[1] if len(mail_keys) > 1 else mail_keys[0])
+            out.metadata["catalogue_key"] = next((k for k in mail_keys if "catalogue" in k or "preview" in k), mail_keys[2] if len(mail_keys) > 2 else None)
         except (ValueError, RuntimeError, IOError) as exc:
             logger.error("mail_system_generator.failed", error=str(exc))
             out.add_file("mail/tv_shopping_broadcast.json", {
-                "tv_shopping_broadcast": "Dear @, ^Welcome to the TV Shopping Network!^  - The TV Shopping Network"
+                "tv_shopping_broadcast": "Dear @, ^Welcome to the TV Shopping Network! Your exclusive shopping channel is now available. ^Watch it on TV to see this week's special offers!^  - The TV Shopping Network"
             })
-            out.metadata["mail_key"] = "tv_shopping_broadcast"
+            out.add_file("mail/tv_shopping_delivery.json", {
+                "tv_shopping_delivery": "Dear @, ^Your order has arrived! ^You purchased %item.name% from the TV Shopping Network. ^Thank you for shopping with us!^  - The TV Shopping Network"
+            })
+            out.metadata["mail_keys"] = ["tv_shopping_broadcast", "tv_shopping_delivery"]
+            out.metadata["broadcast_key"] = "tv_shopping_broadcast"
+            out.metadata["purchase_key"] = "tv_shopping_delivery"
+            out.metadata["catalogue_key"] = None
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
@@ -507,4 +549,145 @@ MinItems/MaxItems (item counts), DiscountRate (0.5/0.75/1.0), PriceVariance (0.0
         errors = []
         if not output.files.get("config.json"):
             errors.append("config_schema_generator: config.json missing")
+        return errors
+
+
+class ContentJsonGenerator(BaseGenerator):
+    name = "content_json_generator"
+    phase = "shop_channel"
+    game = "stardew_valley"
+
+    async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
+        out = GeneratorOutput()
+        prior = inp.get("prior_outputs", {})
+
+        manifest_data = prior.get("manifest_generator", GeneratorOutput()).files.get("manifest.json", {})
+        mod_id = manifest_data.get("UniqueID", "TVShoppingNetwork").lower()
+        config_data = prior.get("config_schema_generator", GeneratorOutput()).files.get("config.json", {})
+        tv_data = prior.get("tv_channel_generator", GeneratorOutput()).files.get("data/tv_channels.json", {})
+        mail_outputs = prior.get("mail_system_generator", GeneratorOutput())
+        shop_tsv = prior.get("shop_item_pool_generator", GeneratorOutput()).files.get("Data/Shops.tsv", "")
+        catalog_data = prior.get("catalog_preview_generator", GeneratorOutput()).files.get("catalog_preview.json", {})
+        trigger_data = prior.get("trigger_logic_generator", GeneratorOutput()).files.get("data/trigger_actions.json", {})
+        damage_data = prior.get("realism_damage_generator", GeneratorOutput()).files.get("data/damage_modifiers.json", {})
+
+        channel_id = prior.get("tv_channel_generator", GeneratorOutput()).metadata.get("channel_id", "tv_shopping_network")
+        channel_name = prior.get("tv_channel_generator", GeneratorOutput()).metadata.get("channel_name", "TV Shopping Network")
+        mail_keys = mail_outputs.metadata.get("mail_keys", [])
+        broadcast_key = mail_outputs.metadata.get("broadcast_key", "tv_shopping_broadcast")
+        purchase_key = mail_outputs.metadata.get("purchase_key", "tv_shopping_delivery")
+        catalogue_key = mail_outputs.metadata.get("catalogue_key")
+
+        actions: list[dict] = []
+
+        actions.append({
+            "Action": "Load",
+            "Target": f"mods/{mod_id}/tv_channels",
+            "FromFile": "assets/data/tv_channels.json",
+            "When": {"DayOfMonth": 6},
+        })
+
+        tv_channel_entry = {
+            "Name": channel_name,
+            "ChannelID": channel_id,
+            "Description": "Weekly exclusive deals!",
+            "IconSheet": "Television",
+            "IconIndex": 0,
+        }
+        actions.append({
+            "Action": "EditData",
+            "Target": "Data/tvChannels",
+            "Entries": {"tv_shopping_network": tv_channel_entry},
+        })
+
+        for mail_key in mail_keys:
+            mail_file_name = f"mail/{mail_key}.json"
+            if mail_file_name in mail_outputs.files:
+                mail_content = mail_outputs.files[mail_file_name]
+                if isinstance(mail_content, dict):
+                    for letter_key, letter_text in mail_content.items():
+                        mail_entry: dict = {"text": letter_text}
+                        if letter_key == broadcast_key:
+                            mail_entry["broadcast"] = True
+                        if letter_key == purchase_key:
+                            mail_entry["item"] = "%item.name%"
+                            mail_entry["item_t"] = "Object"
+                        actions.append({
+                            "Action": "EditData",
+                            "Target": "Data/mail",
+                            "Entries": {letter_key: mail_entry},
+                        })
+
+        if shop_tsv and isinstance(shop_tsv, str):
+            actions.append({
+                "Action": "Load",
+                "Target": f"Data/Shops/{mod_id}",
+                "FromFile": "assets/data/shops.tsv",
+                "When": {"DayOfMonth": 6},
+            })
+
+        if catalog_data:
+            catalog_items = catalog_data.get("items", [])
+            if catalog_items:
+                actions.append({
+                    "Action": "Load",
+                    "Target": f"mods/{mod_id}/catalog_preview",
+                    "FromFile": "assets/data/catalog_preview.json",
+                    "When": {"MailReceived": broadcast_key},
+                })
+
+        if damage_data:
+            dmg_multiplier = damage_data.get("DamageMultiplier", 1.0)
+            price_scaling = damage_data.get("PriceScaling", {})
+            if isinstance(price_scaling, dict) and price_scaling.get("enabled"):
+                actions.append({
+                    "Action": "Load",
+                    "Target": f"mods/{mod_id}/damage_config",
+                    "FromFile": "assets/data/damage_modifiers.json",
+                })
+
+        enabled = config_data.get("Enabled", True)
+        if not enabled:
+            actions = [{
+                "Action": "EditData",
+                "Target": "Data/tvChannels",
+                "DeleteEntries": ["tv_shopping_network"],
+            }]
+
+        content_json: list[dict] = []
+        for action in actions:
+            content_action: dict = {"Action": action.pop("Action")}
+            if action.get("Target"):
+                content_action["Target"] = action.pop("Target")
+            when_cond = action.pop("When", None)
+            if when_cond:
+                content_action["When"] = when_cond
+            if action.get("FromFile"):
+                content_action["FromFile"] = action.pop("FromFile")
+            if action.get("Entries"):
+                content_action["Entries"] = action.pop("Entries")
+            if action.get("DeleteEntries"):
+                content_action["DeleteEntries"] = action.pop("DeleteEntries")
+            content_action.update(action)
+            content_json.append(content_action)
+
+        out.add_file("content.json", content_json)
+        out.metadata["mod_id"] = mod_id
+        out.metadata["actions_count"] = len(content_json)
+        return out
+
+    def validate_output(self, output: GeneratorOutput) -> list[str]:
+        errors = []
+        content = output.files.get("content.json")
+        if not content:
+            errors.append("content_json_generator: content.json missing")
+            return errors
+        if not isinstance(content, list):
+            errors.append("content_json_generator: content.json must be an array")
+        else:
+            for i, action in enumerate(content):
+                if not isinstance(action, dict):
+                    errors.append(f"content_json_generator: action[{i}] is not a dict")
+                elif "Action" not in action:
+                    errors.append(f"content_json_generator: action[{i}] missing 'Action' field")
         return errors

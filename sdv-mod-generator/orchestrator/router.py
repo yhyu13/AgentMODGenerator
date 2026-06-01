@@ -143,5 +143,6 @@ def _default_generators_for_phase(phase: str) -> list[str]:
             "mail_system_generator", "item_sprites_generator", "ui_assets_generator",
             "catalog_preview_generator", "realism_damage_generator",
             "trigger_logic_generator", "config_schema_generator",
+            "content_json_generator",
         ]
     return []

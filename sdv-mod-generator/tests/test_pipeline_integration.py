@@ -101,18 +101,38 @@ class TestNodeT1Gate:
             game="stardew_valley",
             phase="shop_channel",
         )
-        out = GeneratorOutput()
-        out.add_file("manifest.json", {
+        manifest_out = GeneratorOutput()
+        manifest_out.add_file("manifest.json", {
             "Format": "1.29.0",
             "UniqueID": "test_mod",
             "Name": "Test",
             "Version": "1.0.0",
             "ContentPackFor": {"UniqueID": "Pathoschild.ContentPatcher"},
         })
-        out.add_file("Data/Shops.tsv", "ItemType\tItemName\tItemName2\tPrice\tStock\nObject\tTest\t\t100\t1")
-        out.add_file("config.json", {"Enabled": True})
-        out.add_file("data/trigger_actions.json", {"OnShopOpen": []})
-        state.outputs = {"manifest_generator": out}
+        shop_out = GeneratorOutput()
+        shop_out.add_file("Data/Shops.tsv", "ItemType\tItemName\tItemName2\tPrice\tStock\nObject\tTest\t\t100\t1")
+        config_out = GeneratorOutput()
+        config_out.add_file("config.json", {"Enabled": True})
+        trigger_out = GeneratorOutput()
+        trigger_out.add_file("data/trigger_actions.json", {"OnShopOpen": []})
+        mail_out = GeneratorOutput()
+        mail_out.add_file("mail/tv_shopping_broadcast.json", {"tv_shopping_broadcast": "Dear @, ^Welcome!^  - TVSN"})
+        tv_out = GeneratorOutput()
+        tv_out.add_file("data/tv_channels.json", {"channels": [{"Name": "TV Shopping Network", "ChannelID": "tv_shopping_network"}]})
+        content_out = GeneratorOutput()
+        content_out.add_file("content.json", [
+            {"Action": "EditData", "Target": "Data/tvChannels", "Entries": {"tv_shopping_network": {"Name": "TV Shopping Network", "ChannelID": "tv_shopping_network"}}},
+            {"Action": "EditData", "Target": "Data/mail", "Entries": {"tv_shopping_broadcast": {"text": "Dear @, ^Welcome!^  - TVSN", "broadcast": True}}},
+        ])
+        state.outputs = {
+            "manifest_generator": manifest_out,
+            "shop_item_pool_generator": shop_out,
+            "config_schema_generator": config_out,
+            "trigger_logic_generator": trigger_out,
+            "mail_system_generator": mail_out,
+            "tv_channel_generator": tv_out,
+            "content_json_generator": content_out,
+        }
         result = node_t1_gate(state)
         assert result.t1_passed is True
         assert result.status != "failed"

@@ -20,6 +20,7 @@ def make_input(prompt: str = "test prompt") -> GeneratorInput:
         "hint": {},
         "request_id": "req_test",
         "game": "stardew_valley",
+        "prior_outputs": {},
     }
 
 

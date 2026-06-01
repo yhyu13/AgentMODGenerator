@@ -63,11 +63,13 @@ async def node_generate(state: PipelineState) -> PipelineState:
             return state
 
         try:
+            prior = {k: v for k, v in state.outputs.items()}
             inp: GeneratorInput = {
                 "prompt": state.prompt,
                 "hint": state.hint,
                 "request_id": state.request_id,
                 "game": state.game,
+                "prior_outputs": prior,
             }
             gen = gen_cls()
             output = await gen.generate(inp)
