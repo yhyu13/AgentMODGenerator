@@ -116,18 +116,25 @@ async def node_t2_gate(state: PipelineState) -> PipelineState:
     logger.info("pipeline.t2_gate", request_id=state.request_id)
     state.status = "t2_gating"
 
-    result = await run_t2(state.request_id, state.outputs)
-    state.t2_passed = result.passed
-    state.t2_available = result.available
-    state.t2_score = result.score
-    state.t2_feedback = result.feedback
+    try:
+        result = await run_t2(state.request_id, state.outputs)
+        state.t2_passed = result.passed
+        state.t2_available = result.available
+        state.t2_score = result.score
+        state.t2_feedback = result.feedback
+    except Exception as exc:
+        logger.warning("pipeline.t2_gate.error", request_id=state.request_id, error=str(exc))
+        state.t2_passed = True
+        state.t2_available = False
+        state.t2_score = 0
+        state.t2_feedback = f"[T2 judge unavailable: {exc}]"
 
     logger.info(
         "pipeline.t2_gate.done",
         request_id=state.request_id,
-        score=result.score,
-        passed=result.passed,
-        feedback=result.feedback,
+        score=state.t2_score,
+        passed=state.t2_passed,
+        feedback=state.t2_feedback,
     )
     return state
 

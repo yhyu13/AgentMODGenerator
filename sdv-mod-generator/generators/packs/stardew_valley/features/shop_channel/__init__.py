@@ -192,16 +192,16 @@ For each item provide:
                 logger.warning("shop_item_pool.invalid_items", invalid=invalid_items)
             if not valid_item_names:
                 logger.warning("shop_item_pool.no_valid_items")
-                out.add_file("Data/Shops.tsv", self._fallback_tsv())
+                out.add_file("assets/data/shops.tsv", self._fallback_tsv())
                 return out
             lines = ["ItemType\tItemName\tItemName2\tPrice\tStock"]
             for item in pool.items:
                 if item["ItemName"] in valid_item_names:
                     lines.append(f"{item['ItemType']}\t{item['ItemName']}\t\t{item['Price']}\t{item.get('Stock', 1)}")
-            out.add_file("Data/Shops.tsv", "\n".join(lines))
+            out.add_file("assets/data/shops.tsv", "\n".join(lines))
         except (ValueError, RuntimeError, IOError) as exc:
             logger.error("shop_item_pool_generator.failed", error=str(exc))
-            out.add_file("Data/Shops.tsv", self._fallback_tsv())
+            out.add_file("assets/data/shops.tsv", self._fallback_tsv())
         return out
 
     def _fallback_tsv(self) -> str:
@@ -216,8 +216,8 @@ For each item provide:
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
         errors = []
-        if not output.files.get("Data/Shops.tsv"):
-            errors.append("shop_item_pool_generator: Data/Shops.tsv missing")
+        if not output.files.get("assets/data/shops.tsv"):
+            errors.append("shop_item_pool_generator: assets/data/shops.tsv missing")
         return errors
 
 
@@ -254,12 +254,12 @@ Include:
                 "IconIndex": 0,
             }
             channel_id = channel.get("ChannelID", "tv_shopping_network")
-            out.add_file("data/tv_channels.json", {"channels": [channel]})
+            out.add_file("assets/data/tv_channels.json", {"channels": [channel]})
             out.metadata["channel_id"] = channel_id
             out.metadata["channel_name"] = channel.get("Name", "TV Shopping Network")
         except (ValueError, RuntimeError, IOError) as exc:
             logger.error("tv_channel_generator.failed", error=str(exc))
-            out.add_file("data/tv_channels.json", {
+            out.add_file("assets/data/tv_channels.json", {
                 "channels": [{
                     "Name": "TV Shopping Network",
                     "ChannelID": "tv_shopping_network",
@@ -274,9 +274,9 @@ Include:
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
         errors = []
-        channels_data = output.files.get("data/tv_channels.json")
+        channels_data = output.files.get("assets/data/tv_channels.json")
         if not channels_data:
-            errors.append("tv_channel_generator: data/tv_channels.json missing")
+            errors.append("tv_channel_generator: assets/data/tv_channels.json missing")
         elif "channels" not in channels_data:
             errors.append("tv_channel_generator: channels key missing")
         return errors
@@ -401,16 +401,16 @@ Generate 4-6 items with name, price, and a 1-line SDV-style description.'''
                 max_tokens=2048,
             )
             catalog = CatalogPreviewOutput(**result)
-            out.add_file("catalog_preview.json", {
+            out.add_file("assets/data/catalog_preview.json", {
                 "shop_name": "TV Shopping Network",
-                "broadcast_day": "Sunday",
+                "broadcast_day": "Saturday",
                 "items": catalog.items,
             })
         except (ValueError, RuntimeError, IOError) as exc:
             logger.error("catalog_preview_generator.failed", error=str(exc))
-            out.add_file("catalog_preview.json", {
+            out.add_file("assets/data/catalog_preview.json", {
                 "shop_name": "TV Shopping Network",
-                "broadcast_day": "Sunday",
+                "broadcast_day": "Saturday",
                 "items": [
                     {"name": "Melon Seeds", "price": 250, "description": "Grows into a juicy melon."},
                 ],
@@ -419,9 +419,9 @@ Generate 4-6 items with name, price, and a 1-line SDV-style description.'''
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
         errors = []
-        preview = output.files.get("catalog_preview.json")
+        preview = output.files.get("assets/data/catalog_preview.json")
         if not preview:
-            errors.append("catalog_preview_generator: catalog_preview.json missing")
+            errors.append("catalog_preview_generator: assets/data/catalog_preview.json missing")
         elif "items" not in preview:
             errors.append("catalog_preview_generator: items key missing")
         return errors
@@ -446,14 +446,14 @@ Include DamageMultiplier (1.0 = normal) and optional PriceScaling. Keep close to
                 max_tokens=512,
             )
             dmg = RealismDamageOutput(**result)
-            out.add_file("data/damage_modifiers.json", {
+            out.add_file("assets/data/damage_modifiers.json", {
                 "ModID": "TVShoppingNetwork",
                 "DamageMultiplier": dmg.damage_multiplier,
                 "PriceScaling": dmg.price_scaling or {"enabled": False, "factor": 1.0},
             })
         except (ValueError, RuntimeError, IOError) as exc:
             logger.error("realism_damage_generator.failed", error=str(exc))
-            out.add_file("data/damage_modifiers.json", {
+            out.add_file("assets/data/damage_modifiers.json", {
                 "ModID": "TVShoppingNetwork",
                 "DamageMultiplier": 1.0,
                 "PriceScaling": {"enabled": True, "factor": 1.0},
@@ -462,9 +462,9 @@ Include DamageMultiplier (1.0 = normal) and optional PriceScaling. Keep close to
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
         errors = []
-        dmg_file = output.files.get("data/damage_modifiers.json")
+        dmg_file = output.files.get("assets/data/damage_modifiers.json")
         if not dmg_file:
-            errors.append("realism_damage_generator: data/damage_modifiers.json missing")
+            errors.append("realism_damage_generator: assets/data/damage_modifiers.json missing")
         elif "DamageMultiplier" not in dmg_file:
             errors.append("realism_damage_generator: DamageMultiplier missing")
         return errors
@@ -564,12 +564,12 @@ class ContentJsonGenerator(BaseGenerator):
         manifest_data = prior.get("manifest_generator", GeneratorOutput()).files.get("manifest.json", {})
         mod_id = manifest_data.get("UniqueID", "TVShoppingNetwork").lower()
         config_data = prior.get("config_schema_generator", GeneratorOutput()).files.get("config.json", {})
-        tv_data = prior.get("tv_channel_generator", GeneratorOutput()).files.get("data/tv_channels.json", {})
+        tv_data = prior.get("tv_channel_generator", GeneratorOutput()).files.get("assets/data/tv_channels.json", {})
         mail_outputs = prior.get("mail_system_generator", GeneratorOutput())
-        shop_tsv = prior.get("shop_item_pool_generator", GeneratorOutput()).files.get("Data/Shops.tsv", "")
-        catalog_data = prior.get("catalog_preview_generator", GeneratorOutput()).files.get("catalog_preview.json", {})
+        shop_tsv = prior.get("shop_item_pool_generator", GeneratorOutput()).files.get("assets/data/shops.tsv", "")
+        catalog_data = prior.get("catalog_preview_generator", GeneratorOutput()).files.get("assets/data/catalog_preview.json", {})
         trigger_data = prior.get("trigger_logic_generator", GeneratorOutput()).files.get("data/trigger_actions.json", {})
-        damage_data = prior.get("realism_damage_generator", GeneratorOutput()).files.get("data/damage_modifiers.json", {})
+        damage_data = prior.get("realism_damage_generator", GeneratorOutput()).files.get("assets/data/damage_modifiers.json", {})
 
         channel_id = prior.get("tv_channel_generator", GeneratorOutput()).metadata.get("channel_id", "tv_shopping_network")
         channel_name = prior.get("tv_channel_generator", GeneratorOutput()).metadata.get("channel_name", "TV Shopping Network")

@@ -56,8 +56,8 @@ class TestShopItemPoolGenerator:
     async def test_shop_item_pool_fallback_no_llm(self):
         gen = ShopItemPoolGenerator()
         out = await gen.generate(make_input("shop with seeds"))
-        assert "Data/Shops.tsv" in out.files
-        tsv = out.files["Data/Shops.tsv"]
+        assert "assets/data/shops.tsv" in out.files
+        tsv = out.files["assets/data/shops.tsv"]
         assert "ItemType\tItemName\tItemName2\tPrice\tStock" in tsv
         assert "Parsnip" in tsv
 
@@ -65,7 +65,7 @@ class TestShopItemPoolGenerator:
     async def test_shop_tsv_has_header_and_rows(self):
         gen = ShopItemPoolGenerator()
         out = await gen.generate(make_input())
-        tsv = out.files["Data/Shops.tsv"]
+        tsv = out.files["assets/data/shops.tsv"]
         lines = tsv.strip().split("\n")
         assert len(lines) >= 2
         assert lines[0] == "ItemType\tItemName\tItemName2\tPrice\tStock"
@@ -83,8 +83,8 @@ class TestTVChannelGenerator:
     async def test_tv_channel_fallback(self):
         gen = TVChannelGenerator()
         out = await gen.generate(make_input())
-        assert "data/tv_channels.json" in out.files
-        channels = out.files["data/tv_channels.json"]["channels"]
+        assert "assets/data/tv_channels.json" in out.files
+        channels = out.files["assets/data/tv_channels.json"]["channels"]
         assert len(channels) >= 1
         assert "Name" in channels[0]
         assert "ChannelID" in channels[0]

@@ -23,14 +23,14 @@ class TestT1Gate:
 
     def test_t1_fails_empty_shops_tsv(self):
         out = GeneratorOutput()
-        out.add_file("Data/Shops.tsv", "")
+        out.add_file("assets/data/shops.tsv", "")
         result = run_t1("req_test", {"shop_item_pool_generator": out})
         assert result.passed is False
         assert any("no data rows" in e for e in result.errors)
 
     def test_t1_passes_valid_shops_tsv(self, sample_shops_tsv):
         out = GeneratorOutput()
-        out.add_file("Data/Shops.tsv", sample_shops_tsv)
+        out.add_file("assets/data/shops.tsv", sample_shops_tsv)
         result = run_t1("req_test", {"shop_item_pool_generator": out})
         assert result.passed is True
         assert result.errors == []

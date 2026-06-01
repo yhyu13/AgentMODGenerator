@@ -110,7 +110,7 @@ class TestNodeT1Gate:
             "ContentPackFor": {"UniqueID": "Pathoschild.ContentPatcher"},
         })
         shop_out = GeneratorOutput()
-        shop_out.add_file("Data/Shops.tsv", "ItemType\tItemName\tItemName2\tPrice\tStock\nObject\tTest\t\t100\t1")
+        shop_out.add_file("assets/data/shops.tsv", "ItemType\tItemName\tItemName2\tPrice\tStock\nObject\tTest\t\t100\t1")
         config_out = GeneratorOutput()
         config_out.add_file("config.json", {"Enabled": True})
         trigger_out = GeneratorOutput()
@@ -118,7 +118,7 @@ class TestNodeT1Gate:
         mail_out = GeneratorOutput()
         mail_out.add_file("mail/tv_shopping_broadcast.json", {"tv_shopping_broadcast": "Dear @, ^Welcome!^  - TVSN"})
         tv_out = GeneratorOutput()
-        tv_out.add_file("data/tv_channels.json", {"channels": [{"Name": "TV Shopping Network", "ChannelID": "tv_shopping_network"}]})
+        tv_out.add_file("assets/data/tv_channels.json", {"channels": [{"Name": "TV Shopping Network", "ChannelID": "tv_shopping_network"}]})
         content_out = GeneratorOutput()
         content_out.add_file("content.json", [
             {"Action": "EditData", "Target": "Data/tvChannels", "Entries": {"tv_shopping_network": {"Name": "TV Shopping Network", "ChannelID": "tv_shopping_network"}}},

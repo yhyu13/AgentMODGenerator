@@ -66,7 +66,7 @@ def _validate_file(gen_name: str, file_path: str, content: dict | str) -> list[s
                     parsed = json.loads(content)
                     if not isinstance(parsed, (dict, list)):
                         errors.append(f"{gen_name}: {file_path} is not a JSON object or array")
-                except Exception:
+                except json.JSONDecodeError:
                     errors.append(f"{gen_name}: {file_path} is not valid JSON")
             else:
                 errors.append(f"{gen_name}: {file_path} is not a JSON object or array")
@@ -96,16 +96,16 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
                 errors.append("manifest_generator: ContentPackFor.UniqueID missing")
 
     elif gen_name == "shop_item_pool_generator":
-        shops_tsv = output.files.get("Data/Shops.tsv", "")
+        shops_tsv = output.files.get("assets/data/shops.tsv", "")
         if isinstance(shops_tsv, str):
             lines = shops_tsv.strip().split("\n")
             if len(lines) < 2:
-                errors.append("shop_item_pool_generator: Data/Shops.tsv has no data rows")
+                errors.append("shop_item_pool_generator: assets/data/shops.tsv has no data rows")
             else:
                 header = lines[0].split("\t")
                 expected = ["ItemType", "ItemName", "ItemName2", "Price", "Stock"]
                 if header != expected:
-                    errors.append(f"shop_item_pool_generator: Data/Shops.tsv header mismatch — expected {expected}, got {header}")
+                    errors.append(f"shop_item_pool_generator: assets/data/shops.tsv header mismatch — expected {expected}, got {header}")
 
     elif gen_name == "config_schema_generator":
         config = output.files.get("config.json", {})
