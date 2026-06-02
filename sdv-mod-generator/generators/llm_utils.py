@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from pydantic import ValidationError
 
 logger = structlog.get_logger()
 
@@ -67,6 +68,25 @@ def _get_cached_client() -> Any:
     return _client
 
 
+def _unwrap_schema_wrapper(result: dict[str, Any], schema_name: str) -> dict[str, Any]:
+    """If LLM wrapped output in a schema-name key, extract the inner dict.
+
+    E.g. {"ShopItemPoolOutput": {"items": [...]}} → {"items": [...]}
+    Handles case variations: "ShopItemPoolOutput", "shop_item_pool_output", etc.
+    """
+    if len(result) != 1:
+        return result
+    key = next(iter(result))
+    # Check if key is a schema-name wrapper (PascalCase or snake_case variant of schema name)
+    schema_root = schema_name.replace("Output", "").replace("output", "")
+    key_root = key.replace("Output", "").replace("output", "")
+    if key_root.lower() == schema_root.lower():
+        inner = result[key]
+        if isinstance(inner, dict):
+            return inner
+    return result
+
+
 async def generate_structured(
     prompt: str,
     output_schema: type,
@@ -78,6 +98,9 @@ async def generate_structured(
     Uses OpenAI if ANTHROPIC_API_KEY is not set, otherwise Anthropic.
     Uses native structured output when available; schema is NOT added
     to the prompt text since the client handles it via response_format.
+
+    If validation fails because the LLM wrapped output in a schema-name key,
+    automatically unwraps and retries validation once.
     """
     global _client
     if _client is None:
@@ -87,6 +110,8 @@ async def generate_structured(
                 _client = get_client()
     client = _client
 
+    schema_name = output_schema.__name__
+
     try:
         result = await client.complete_with_structured_output(
             prompt,
@@ -94,6 +119,22 @@ async def generate_structured(
             system=system,
             max_tokens=max_tokens,
         )
+        # Validate; if it fails due to schema-name wrapper, unwrap and retry
+        try:
+            output_schema(**result)
+        except ValidationError:
+            unwrapped = _unwrap_schema_wrapper(result, schema_name)
+            try:
+                output_schema(**unwrapped)
+                result = unwrapped
+            except ValidationError:
+                logger.warning(
+                    "llm_utils.generate.unwrapped_validation_failed",
+                    schema=schema_name,
+                    original=result,
+                    unwrapped=unwrapped,
+                )
+                raise
         return result
     except Exception as exc:
         logger.error("llm_utils.generate.error", error=str(exc))

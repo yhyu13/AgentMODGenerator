@@ -2,7 +2,7 @@
 import zlib
 
 import structlog
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
 from generators.llm_utils import (
@@ -32,20 +32,27 @@ def _make_png(width: int, height: int, r: int, g: int, b: int) -> bytes:
 
 
 class ManifestOutput(BaseModel):
-    unique_id: str
-    name: str
-    description: str
-    author: str
-    version: str
-    config_schema: dict[str, dict]
+    unique_id: str = Field(validation_alias="UniqueID")
+    name: str = Field(validation_alias="Name")
+    description: str = Field(validation_alias="Description")
+    author: str = Field(validation_alias="Author")
+    version: str = Field(validation_alias="Version")
+    config_schema: dict[str, dict] = Field(validation_alias="ConfigSchema")
 
 
 class ShopItemPoolOutput(BaseModel):
-    items: list[dict[str, str | int]]
+    items: list[dict[str, str | int]] = Field(validation_alias="Items")
 
 
 class TVChannelOutput(BaseModel):
-    channels: list[dict[str, str | int]]
+    channels: list[dict[str, str | int]] = Field(validation_alias="Channels")
+
+    @field_validator("channels", mode="before")
+    @classmethod
+    def unwrap_channels(cls, v):
+        if isinstance(v, dict) and "Channels" in v:
+            return v["Channels"]
+        return v
 
 
 class MailOutput(BaseModel):
@@ -69,24 +76,29 @@ class ConfigSchemaOutput(BaseModel):
 
 
 class CatalogPreviewOutput(BaseModel):
-    items: list[dict[str, str | int | None]]
+    items: list[dict[str, str | int | None]] = Field(validation_alias="Items")
 
 
 class TriggerLogicOutput(BaseModel):
-    on_shop_open: list[dict[str, str]]
-    on_shop_purchase: list[dict[str, str]]
+    on_shop_open: list[dict[str, str | list]] = Field(validation_alias="OnShopOpen")
+    on_shop_purchase: list[dict[str, str | list]] = Field(validation_alias="OnShopPurchase")
 
 
 class RealismDamageOutput(BaseModel):
-    damage_multiplier: float
-    price_scaling: dict | None = None
+    damage_multiplier: float = Field(default=1.0, validation_alias="DamageMultiplier")
+    price_scaling: dict | None = Field(default=None, validation_alias="PriceScaling")
 
-    @field_validator("damage_multiplier")
+    @field_validator("damage_multiplier", mode="before")
     @classmethod
-    def validate_damage_multiplier(cls, v: float) -> float:
-        if not 0.1 <= v <= 5.0:
-            return max(0.1, min(5.0, v))
-        return v
+    def validate_damage_multiplier(cls, v) -> float:
+        if isinstance(v, str):
+            try:
+                v = float(v)
+            except (ValueError, TypeError):
+                return 1.0
+        if isinstance(v, (int, float)):
+            return max(0.1, min(5.0, float(v)))
+        return 1.0
 
 
 def _sanitize_key(key: str) -> str:
@@ -142,7 +154,7 @@ Respond with ONLY valid JSON matching the expected schema.'''
             result = await generate_structured(
                 prompt, ManifestOutput,
                 system=llm_system_prompt(),
-                max_tokens=2048,
+                max_tokens=4096,
             )
             m = ManifestOutput(**result)
             slug = m.unique_id.lower().replace(" ", "_").replace("-", "_")
@@ -198,7 +210,7 @@ For each item provide:
             result = await generate_structured(
                 prompt, ShopItemPoolOutput,
                 system=llm_system_prompt(),
-                max_tokens=2048,
+                max_tokens=4096,
             )
             pool = ShopItemPoolOutput(**result)
             valid_item_names: list[str] = []
@@ -263,7 +275,7 @@ Include:
             result = await generate_structured(
                 prompt, TVChannelOutput,
                 system=llm_system_prompt(),
-                max_tokens=2048,
+                max_tokens=4096,
             )
             channels = TVChannelOutput(**result).channels
             channel = channels[0] if channels else {
@@ -327,7 +339,7 @@ Keep brief and in-character.'''
             result = await generate_structured(
                 prompt, MailListOutput,
                 system=llm_system_prompt(),
-                max_tokens=1024,
+                max_tokens=4096,
             )
             mails = MailListOutput(**result).mails
             mail_keys = []
@@ -426,7 +438,7 @@ Generate 4-6 items with name, price, and a 1-line SDV-style description.'''
             result = await generate_structured(
                 prompt, CatalogPreviewOutput,
                 system=llm_system_prompt(),
-                max_tokens=2048,
+                max_tokens=4096,
             )
             catalog = CatalogPreviewOutput(**result)
             out.add_file("assets/data/catalog_preview.json", {
@@ -471,7 +483,7 @@ Include DamageMultiplier (1.0 = normal) and optional PriceScaling. Keep close to
                 prompt,
                 RealismDamageOutput,
                 system=llm_system_prompt(),
-                max_tokens=512,
+                max_tokens=1024,
             )
             dmg = RealismDamageOutput(**result)
             out.add_file("assets/data/damage_modifiers.json", {
@@ -514,7 +526,7 @@ Use valid Content Patcher action names only.'''
             result = await generate_structured(
                 prompt, TriggerLogicOutput,
                 system=llm_system_prompt(),
-                max_tokens=2048,
+                max_tokens=4096,
             )
             triggers = TriggerLogicOutput(**result)
             out.add_file("data/trigger_actions.json", {
@@ -552,7 +564,7 @@ MinItems/MaxItems (item counts), DiscountRate (0.5/0.75/1.0), PriceVariance (0.0
             result = await generate_structured(
                 prompt, ConfigSchemaOutput,
                 system=llm_system_prompt(),
-                max_tokens=2048,
+                max_tokens=4096,
             )
             cfg = ConfigSchemaOutput(**result)
             out.add_file("config.json", {

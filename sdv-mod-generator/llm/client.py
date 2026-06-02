@@ -40,6 +40,8 @@ def _build_schema_dict(output_schema: type) -> dict[str, Any]:
 
 
 def _strip_code_fence(content: str) -> str:
+    import re
+    # Remove thinking blocks: <think>...(multi-line)...</think>
     content = content.strip()
     # Remove thinking tags that some models output (e.g., MiniMax deep thinking)
     import re

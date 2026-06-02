@@ -118,7 +118,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
 
         result = await asyncio.wait_for(
             run_pipeline(request_id, req.user_id, req.prompt),
-            timeout=600,
+            timeout=900,
         )
 
         if result is None:
