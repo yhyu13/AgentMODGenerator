@@ -46,9 +46,11 @@ def package(request_id: str, files: dict[str, dict], assets: list[str]) -> str:
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_path, content in files.items():
             normalized = _normalize_path(file_path)
-            if isinstance(content, dict):
+            if isinstance(content, (dict, list)):
                 zf.writestr(normalized, json.dumps(content, indent=2, ensure_ascii=False))
             elif isinstance(content, str):
+                zf.writestr(normalized, content)
+            elif isinstance(content, bytes):
                 zf.writestr(normalized, content)
             else:
                 zf.writestr(normalized, str(content))

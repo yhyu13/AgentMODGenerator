@@ -41,6 +41,9 @@ def _build_schema_dict(output_schema: type) -> dict[str, Any]:
 
 def _strip_code_fence(content: str) -> str:
     content = content.strip()
+    # Remove thinking tags that some models output (e.g., MiniMax deep thinking)
+    import re
+    content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
     if content.startswith("```"):
         parts = content.split("```", 2)
         if len(parts) >= 3:
@@ -96,33 +99,28 @@ class OpenAIClient:
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
+
+        # Try json_object mode first (simpler, more widely supported)
         try:
             response = await self._client.chat.completions.create(
                 model=self._model,
                 messages=messages,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": schema_dict,
-                },
+                response_format={"type": "json_object"},
                 **kwargs,
             )
             if not response.choices:
                 raise LLMError("OpenAI response has no choices")
             raw_content = response.choices[0].message.content or ""
             content = _strip_code_fence(raw_content)
-            return json.loads(content)
-        except (openai.BadRequestError, openai.APIError) as exc:
-            if "json_schema" in str(exc) or "response_format" in str(exc).lower():
-                return await self._complete_with_fallback(prompt, output_schema, system, **kwargs)
-            raise
-        except json.JSONDecodeError as exc:
-            raise LLMError(f"OpenAI JSON decode error: {exc}, raw response: {raw_content[:500]}") from exc
-        except openai.RateLimitError:
-            raise RateLimitError("OpenAI rate limit exceeded")
-        except openai.AuthenticationError:
-            raise AuthError("OpenAI authentication failed")
+            result = json.loads(content)
+            # Validate against schema
+            output_schema(**result)
+            return result
         except Exception as exc:
-            raise LLMError(f"OpenAI structured output error: {exc}") from exc
+            pass  # Fall through to fallback
+
+        # Fallback: use schema in prompt, no response_format constraint
+        return await self._complete_with_fallback(prompt, output_schema, system, **kwargs)
 
     async def _complete_with_fallback(
         self, prompt: str, output_schema: type, system: str | None, **kwargs

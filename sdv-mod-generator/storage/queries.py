@@ -2,9 +2,10 @@
 from typing import Any
 
 import structlog
-from sqlalchemy import text
+from sqlalchemy import insert, select, text
 
 from storage.postgres import get_session
+from storage.models import ModRequest, ModOutput
 
 logger = structlog.get_logger()
 
@@ -19,19 +20,15 @@ async def create_mod_request(
 ) -> None:
     async with get_session() as session:
         await session.execute(
-            text("""
-                INSERT INTO mod_requests (request_id, user_id, prompt, phase, generators, hint, status, created_at, updated_at)
-                VALUES (:request_id, :user_id, :prompt, :phase, :generators, :hint, 'pending', NOW(), NOW())
-                ON CONFLICT (request_id) DO NOTHING
-            """),
-            {
-                "request_id": request_id,
-                "user_id": user_id,
-                "prompt": prompt,
-                "phase": phase,
-                "generators": generators,
-                "hint": hint,
-            },
+            insert(ModRequest).values(
+                request_id=request_id,
+                user_id=user_id,
+                prompt=prompt,
+                phase=phase,
+                generators=generators,
+                hint=hint,
+                status="pending",
+            )
         )
 
 
@@ -59,28 +56,28 @@ async def save_mod_output(
     t2_feedback: str | None,
     t2_score: int | None,
 ) -> None:
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
     async with get_session() as session:
         await session.execute(
-            text("""
-                INSERT INTO mod_outputs (request_id, zip_key, zip_url, files_preview, t1_errors, t2_feedback, t2_score, created_at)
-                VALUES (:request_id, :zip_key, :zip_url, :files_preview, :t1_errors, :t2_feedback, :t2_score, NOW())
-                ON CONFLICT (request_id) DO UPDATE SET
-                    zip_key = EXCLUDED.zip_key,
-                    zip_url = EXCLUDED.zip_url,
-                    files_preview = EXCLUDED.files_preview,
-                    t1_errors = EXCLUDED.t1_errors,
-                    t2_feedback = EXCLUDED.t2_feedback,
-                    t2_score = EXCLUDED.t2_score
-            """),
-            {
-                "request_id": request_id,
-                "zip_key": zip_key,
-                "zip_url": zip_url,
-                "files_preview": files_preview,
-                "t1_errors": t1_errors,
-                "t2_feedback": t2_feedback,
-                "t2_score": t2_score,
-            },
+            pg_insert(ModOutput).values(
+                request_id=request_id,
+                zip_key=zip_key,
+                zip_url=zip_url,
+                files_preview=files_preview,
+                t1_errors=t1_errors,
+                t2_feedback=t2_feedback,
+                t2_score=t2_score,
+            ).on_conflict_do_update(
+                index_elements=["request_id"],
+                set_={
+                    "zip_key": zip_key,
+                    "zip_url": zip_url,
+                    "files_preview": files_preview,
+                    "t1_errors": t1_errors,
+                    "t2_feedback": t2_feedback,
+                    "t2_score": t2_score,
+                },
+            )
         )
 
 

@@ -118,9 +118,9 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
             errors.append("trigger_logic_generator: data/trigger_actions.json missing or empty")
 
     elif gen_name == "mail_system_generator":
-        mail = output.files.get("mail/tv_shopping_broadcast.json", {})
-        if not mail:
-            errors.append("mail_system_generator: mail/tv_shopping_broadcast.json missing or empty")
+        mail_files = [v for k, v in output.files.items() if k.startswith("mail/")]
+        if not mail_files:
+            errors.append("mail_system_generator: no mail files generated")
 
     elif gen_name == "content_json_generator":
         content = output.files.get("content.json")

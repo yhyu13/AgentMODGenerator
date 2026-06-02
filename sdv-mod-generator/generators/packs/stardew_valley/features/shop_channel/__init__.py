@@ -1,6 +1,8 @@
 """Stardew Valley shop channel feature generators."""
+import zlib
+
 import structlog
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ValidationError, field_validator
 
 from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
 from generators.llm_utils import (
@@ -9,6 +11,24 @@ from generators.llm_utils import (
 )
 
 logger = structlog.get_logger()
+
+
+def _make_png(width: int, height: int, r: int, g: int, b: int) -> bytes:
+    """Generate a minimal valid PNG (32-bit RGBA solid color) using stdlib only."""
+    def png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
+        return len(data).to_bytes(4, "big") + chunk_type + data + crc.to_bytes(4, "big")
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr_data = width.to_bytes(4, "big") + height.to_bytes(4, "big") + bytes([8, 6, 0, 0, 0])
+    ihdr = png_chunk(b"IHDR", ihdr_data)
+
+    raw_row = bytes([0] + [r, g, b, 255] * width)
+    raw_data = b"".join(raw_row for _ in range(height))
+    compressed = zlib.compress(raw_data, 9)
+    idat = png_chunk(b"IDAT", compressed)
+    iend = png_chunk(b"IEND", b"")
+    return signature + ihdr + idat + iend
 
 
 class ManifestOutput(BaseModel):
@@ -137,7 +157,7 @@ Respond with ONLY valid JSON matching the expected schema.'''
                 "ConfigSchema": m.config_schema,
             })
             out.metadata["mod_slug"] = slug
-        except (ValueError, RuntimeError, IOError) as exc:
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("manifest_generator.failed", error=str(exc))
             out.add_file("manifest.json", _MANIFEST_FALLBACK)
         return out
@@ -199,7 +219,7 @@ For each item provide:
                 if item["ItemName"] in valid_item_names:
                     lines.append(f"{item['ItemType']}\t{item['ItemName']}\t\t{item['Price']}\t{item.get('Stock', 1)}")
             out.add_file("assets/data/shops.tsv", "\n".join(lines))
-        except (ValueError, RuntimeError, IOError) as exc:
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("shop_item_pool_generator.failed", error=str(exc))
             out.add_file("assets/data/shops.tsv", self._fallback_tsv())
         return out
@@ -257,7 +277,7 @@ Include:
             out.add_file("assets/data/tv_channels.json", {"channels": [channel]})
             out.metadata["channel_id"] = channel_id
             out.metadata["channel_name"] = channel.get("Name", "TV Shopping Network")
-        except (ValueError, RuntimeError, IOError) as exc:
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("tv_channel_generator.failed", error=str(exc))
             out.add_file("assets/data/tv_channels.json", {
                 "channels": [{
@@ -319,7 +339,7 @@ Keep brief and in-character.'''
             out.metadata["broadcast_key"] = next((k for k in mail_keys if "broadcast" in k), mail_keys[0] if mail_keys else "tv_shopping_broadcast")
             out.metadata["purchase_key"] = next((k for k in mail_keys if "purchase" in k or "delivery" in k), mail_keys[1] if len(mail_keys) > 1 else mail_keys[0])
             out.metadata["catalogue_key"] = next((k for k in mail_keys if "catalogue" in k or "preview" in k), mail_keys[2] if len(mail_keys) > 2 else None)
-        except (ValueError, RuntimeError, IOError) as exc:
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("mail_system_generator.failed", error=str(exc))
             out.add_file("mail/tv_shopping_broadcast.json", {
                 "tv_shopping_broadcast": "Dear @, ^Welcome to the TV Shopping Network! Your exclusive shopping channel is now available. ^Watch it on TV to see this week's special offers!^  - The TV Shopping Network"
@@ -346,11 +366,15 @@ class ItemSpritesGenerator(BaseGenerator):
 
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
+        # Generate a 32x32 shop logo sprite (purple/blue TV shopping theme)
+        sprite_png = _make_png(32, 32, 128, 80, 200)
+        out.add_file("assets/sprites/shop_sprites.png", sprite_png)
         out.add_file("assets/sprites/shop_logo.json", {
-            "UseExisting": True,
+            "UseExisting": False,
             "SourceRect": {"X": 0, "Y": 0, "Width": 32, "Height": 32},
-            "SpriteSheet": "Maps/springobjects",
+            "SpriteSheet": "assets/sprites/shop_sprites.png",
         })
+        out.add_asset("assets/sprites/shop_sprites.png")
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
@@ -368,11 +392,15 @@ class UIAssetsGenerator(BaseGenerator):
 
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
+        # Generate a 16x16 catalog background tile (warm gold color)
+        bg_png = _make_png(16, 16, 200, 160, 80)
+        out.add_file("assets/ui/catalog_background.png", bg_png)
         out.add_file("assets/ui/catalog_background.json", {
-            "UseExisting": True,
-            "SpriteSheet": "Maps/MenuTiles",
-            "SourceRect": {"X": 16, "Y": 16, "Width": 16, "Height": 16},
+            "UseExisting": False,
+            "SpriteSheet": "assets/ui/catalog_background.png",
+            "SourceRect": {"X": 0, "Y": 0, "Width": 16, "Height": 16},
         })
+        out.add_asset("assets/ui/catalog_background.png")
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
@@ -406,7 +434,7 @@ Generate 4-6 items with name, price, and a 1-line SDV-style description.'''
                 "broadcast_day": "Saturday",
                 "items": catalog.items,
             })
-        except (ValueError, RuntimeError, IOError) as exc:
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("catalog_preview_generator.failed", error=str(exc))
             out.add_file("assets/data/catalog_preview.json", {
                 "shop_name": "TV Shopping Network",
@@ -451,7 +479,7 @@ Include DamageMultiplier (1.0 = normal) and optional PriceScaling. Keep close to
                 "DamageMultiplier": dmg.damage_multiplier,
                 "PriceScaling": dmg.price_scaling or {"enabled": False, "factor": 1.0},
             })
-        except (ValueError, RuntimeError, IOError) as exc:
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("realism_damage_generator.failed", error=str(exc))
             out.add_file("assets/data/damage_modifiers.json", {
                 "ModID": "TVShoppingNetwork",
@@ -493,7 +521,7 @@ Use valid Content Patcher action names only.'''
                 "OnShopOpen": triggers.on_shop_open,
                 "OnShopPurchase": triggers.on_shop_purchase,
             })
-        except (ValueError, RuntimeError, IOError) as exc:
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("trigger_logic_generator.failed", error=str(exc))
             out.add_file("data/trigger_actions.json", {
                 "OnShopOpen": [{"Action": "Mail", "Mail": "tv_shopping_broadcast"}],
@@ -537,7 +565,7 @@ MinItems/MaxItems (item counts), DiscountRate (0.5/0.75/1.0), PriceVariance (0.0
                 "DiscountRate": cfg.discount_rate,
                 "PriceVariance": cfg.price_variance,
             })
-        except (ValueError, RuntimeError, IOError) as exc:
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("config_schema_generator.failed", error=str(exc))
             out.add_file("config.json", {
                 "Enabled": True, "ShopDay": 0, "ShopStartHour": 6, "ShopEndHour": 22,
