@@ -10,6 +10,7 @@ from orchestrator.router import route
 from quality.gate_t1 import run_t1
 from quality.gate_t2 import run_t2
 from generators.core import get_game_pack
+from orchestrator.feedback_router import FeedbackRouter
 from storage.redis import set_status as redis_set_status
 
 logger = structlog.get_logger()

@@ -2,7 +2,6 @@
 
 import asyncio
 import uuid
-from typing import Any
 import structlog
 import discord
 from discord import app_commands
@@ -94,9 +93,6 @@ async def start_bot() -> None:
         logger.warning("discord.bot.start.skipped", reason="no_token")
         return
 
-    if not config.discord_bot_token:
-        logger.error("discord.bot.start.failed", reason="missing_bot_token")
-        return
 
     try:
         _patch_http_for_proxy()
