@@ -5,12 +5,14 @@ import json
 import os
 from typing import Any
 
+import aiohttp
 import structlog
 from fastapi import Request, HTTPException, status
 
 logger = structlog.get_logger()
 
 _DISCORD_PUBLIC_KEY = os.getenv("DISCORD_PUBLIC_KEY", "")
+_DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 
 def verify_signature(body: bytes, signature: str, timestamp: str) -> bool:
@@ -104,3 +106,64 @@ async def _handle_message_component(data: dict[str, Any]) -> dict[str, Any]:
 
 async def _handle_modal_submit(data: dict[str, Any]) -> dict[str, Any]:
     return {"type": 5, "data": {"content": "Modal submission not yet implemented"}}
+
+
+async def send_completion_webhook(
+    user_id: str,
+    request_id: str,
+    zip_key: str | None,
+    t2_score: int | None,
+) -> bool:
+    """Send Discord webhook notification when mod is ready."""
+    if not _DISCORD_WEBHOOK_URL:
+        logger.warning("discord.webhook.send_skipped", reason="no_webhook_url")
+        return False
+
+    status_text = "completed successfully" if zip_key else "failed"
+    score_text = f" (quality score: {t2_score})" if t2_score else ""
+
+    payload = {
+        "content": (
+            f"Mod generation {status_text}!\n"
+            f"Request ID: `{request_id}`\n"
+            f"User ID: {user_id}{score_text}"
+        ),
+        "embeds": [
+            {
+                "title": "Mod Ready" if zip_key else "Mod Failed",
+                "fields": [
+                    {"name": "Request ID", "value": request_id, "inline": True},
+                    {"name": "User ID", "value": user_id, "inline": True},
+                ],
+            }
+        ] if zip_key else [],
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                _DISCORD_WEBHOOK_URL,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 204 or resp.status == 200:
+                    logger.info(
+                        "discord.webhook.sent",
+                        request_id=request_id,
+                        user_id=user_id,
+                        status=status_text,
+                    )
+                    return True
+                logger.warning(
+                    "discord.webhook.send_failed",
+                    request_id=request_id,
+                    status=resp.status,
+                )
+                return False
+    except Exception as exc:
+        logger.error(
+            "discord.webhook.error",
+            request_id=request_id,
+            error=str(exc),
+        )
+        return False
