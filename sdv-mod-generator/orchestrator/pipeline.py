@@ -7,11 +7,13 @@ from generators.core import GeneratorInput
 from generators.packager import package as packager_func
 from orchestrator.state import PipelineState
 from orchestrator.router import route
+from orchestrator.feedback_router import FeedbackRouter
 from quality.gate_t1 import run_t1
 from quality.gate_t2 import run_t2
 from generators.core import get_game_pack
 
 logger = structlog.get_logger()
+_feedback_router = FeedbackRouter()
 
 
 def node_route(state: PipelineState) -> PipelineState:
@@ -54,6 +56,10 @@ async def node_generate(state: PipelineState) -> PipelineState:
         state.status = "failed"
         return state
 
+    gen_feedback_map: dict[str, str] = {}
+    if state.t2_feedback:
+        gen_feedback_map = _feedback_router.route(state.t2_feedback, state.generators)
+
     for gen_name in state.generators:
         gen_cls = pack.get_generator(gen_name, state.phase)
         if gen_cls is None:
@@ -64,12 +70,14 @@ async def node_generate(state: PipelineState) -> PipelineState:
 
         try:
             prior = {k: v for k, v in state.outputs.items()}
+            gen_specific_feedback = gen_feedback_map.get(gen_name, "")
             inp: GeneratorInput = {
                 "prompt": state.prompt,
                 "hint": state.hint,
                 "request_id": state.request_id,
                 "game": state.game,
                 "prior_outputs": prior,
+                "t2_feedback": gen_specific_feedback,
             }
             gen = gen_cls()
             output = await gen.generate(inp)

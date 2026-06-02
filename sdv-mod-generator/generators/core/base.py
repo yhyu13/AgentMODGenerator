@@ -30,6 +30,7 @@ class GeneratorInput(TypedDict):
     request_id: str
     game: str
     prior_outputs: dict[str, GeneratorOutput]
+    t2_feedback: str
 
 
 class BaseGenerator(ABC):
