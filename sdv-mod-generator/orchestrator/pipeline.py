@@ -44,7 +44,13 @@ def node_route(state: PipelineState) -> PipelineState:
 
 async def node_generate(state: PipelineState) -> PipelineState:
     """Run each generator in execution_order from the game pack."""
-    logger.info("pipeline.generating", request_id=state.request_id, game=state.game, generators=state.generators)
+    logger.info(
+        "pipeline.generating",
+        request_id=state.request_id,
+        game=state.game,
+        generators=state.generators,
+        t2_iterations=state.t2_iterations,
+    )
     state.status = "generating"
 
     pack = get_game_pack(state.game)
@@ -70,6 +76,8 @@ async def node_generate(state: PipelineState) -> PipelineState:
                 "request_id": state.request_id,
                 "game": state.game,
                 "prior_outputs": prior,
+                # Pass T2 feedback on retry so generators can self-correct
+                "t2_feedback": state.t2_feedback if state.t2_iterations > 0 else "",
             }
             gen = gen_cls()
             output = await gen.generate(inp)
@@ -112,8 +120,8 @@ def node_t1_gate(state: PipelineState) -> PipelineState:
 
 
 async def node_t2_gate(state: PipelineState) -> PipelineState:
-    """Run Tier 2 LLM judge (advisory only — never blocks)."""
-    logger.info("pipeline.t2_gate", request_id=state.request_id)
+    """Run Tier 2 LLM judge — blocks on failure up to max_t2_iterations."""
+    logger.info("pipeline.t2_gate", request_id=state.request_id, iteration=state.t2_iterations)
     state.status = "t2_gating"
 
     try:
@@ -122,6 +130,12 @@ async def node_t2_gate(state: PipelineState) -> PipelineState:
         state.t2_available = result.available
         state.t2_score = result.score
         state.t2_feedback = result.feedback
+        state.t2_judge_results.append({
+            "iteration": state.t2_iterations,
+            "score": result.score,
+            "feedback": result.feedback,
+            "passed": result.passed,
+        })
     except Exception as exc:
         logger.warning("pipeline.t2_gate.error", request_id=state.request_id, error=str(exc))
         state.t2_passed = True
@@ -132,6 +146,7 @@ async def node_t2_gate(state: PipelineState) -> PipelineState:
     logger.info(
         "pipeline.t2_gate.done",
         request_id=state.request_id,
+        iteration=state.t2_iterations,
         score=state.t2_score,
         passed=state.t2_passed,
         feedback=state.t2_feedback,
@@ -197,7 +212,41 @@ def build_graph() -> StateGraph:
         },
     )
 
-    builder.add_edge("t2_gate", "package")
+    def t2_should_continue(state: PipelineState) -> str:
+        """After T2 gate: loop back to generate if T2 failed and iterations remain."""
+        if state.status == "failed":
+            return "end"
+        if state.t2_passed:
+            return "package"
+        # T2 failed — check if we have iterations left
+        if state.t2_iterations < state.max_t2_iterations:
+            state.t2_iterations += 1
+            logger.info(
+                "pipeline.t2.retry",
+                request_id=state.request_id,
+                iteration=state.t2_iterations,
+                max=state.max_t2_iterations,
+                feedback=state.t2_feedback[:100],
+            )
+            return "generate"
+        # Max iterations reached — ship it (advisory fallback)
+        logger.warning(
+            "pipeline.t2.max_iterations",
+            request_id=state.request_id,
+            iterations=state.t2_iterations,
+        )
+        return "package"
+
+    builder.add_conditional_edges(
+        "t2_gate",
+        t2_should_continue,
+        {
+            "generate": "generate",  # loop back with incremented counter
+            "package": "package",
+            "end": END,
+        },
+    )
+
     builder.add_edge("package", END)
 
     return builder.compile()

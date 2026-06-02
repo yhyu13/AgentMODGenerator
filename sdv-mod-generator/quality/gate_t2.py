@@ -1,8 +1,9 @@
-"""Tier 2 LLM semantic judge — real implementation."""
+"""Tier 2 LLM judge panel — 3 diverse agents evaluating mod quality."""
+import asyncio
 import re
 from typing import Any
 import structlog
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from generators.base import GeneratorOutput
 from llm.client import get_client
@@ -23,30 +24,73 @@ def _sanitize_for_judge(content: str) -> str:
 
 
 @dataclass
+class JudgeResult:
+    judge_name: str
+    score: int
+    feedback: str
+    passed: bool
+
+
+@dataclass
 class T2Result:
     available: bool
     passed: bool
     score: int
     feedback: str = ""
+    panel_results: list[JudgeResult] = field(default_factory=list)
+
+
+JUDGE_PERSONAS = {
+    "game_balance": {
+        "name": "GameBalanceJudge",
+        "system": "You are a Stardew Valley game balance specialist. You evaluate whether mod content maintains reasonable game economy, pricing, and mechanical balance.",
+        "focus": "prices, item values, trigger frequencies, progression balance, economic impact",
+    },
+    "content_quality": {
+        "name": "ContentQualityJudge",
+        "system": "You are a Stardew Valley narrative and content quality specialist. You evaluate descriptions, naming, creativity, and flavor text.",
+        "focus": "descriptions, naming, dialogue, flavor text, immersion, creativity",
+    },
+    "technical_compliance": {
+        "name": "TechnicalComplianceJudge",
+        "system": "You are a Stardew Valley Content Patcher technical specialist. You evaluate whether mod uses correct actions, proper JSON structure, and valid game paths.",
+        "focus": "Content Patcher actions, JSON validity, file paths, action parameters, manifest",
+    },
+}
 
 
 async def run_t2(request_id: str, outputs: dict[str, GeneratorOutput]) -> T2Result:
-    """Run Tier 2 LLM judge — advisory only, never blocks.
-
-    Evaluates mod quality across dimensions:
-    - Semantic coherence (does the mod make sense?)
-    - Game balance (prices reasonable? triggers logical?)
-    - Content quality (descriptions, naming, completeness)
-    - Content Patcher compliance (actions used correctly)
-    """
+    """Run Tier 2 judge panel — 3 diverse agents evaluating mod quality in parallel."""
     logger.info("quality.t2.run", request_id=request_id)
 
     try:
         client = get_client()
-        score, feedback = await _llm_judge(request_id, outputs, client)
-        passed = score >= 7
-        logger.info("quality.t2.done", request_id=request_id, score=score, passed=passed)
-        return T2Result(available=True, passed=passed, score=score, feedback=feedback)
+        panel_results = await _run_judge_panel(request_id, outputs, client)
+
+        if not panel_results:
+            return T2Result(available=False, passed=True, score=0, feedback="[T2 judge panel failed: no results]")
+
+        avg_score = sum(r.score for r in panel_results) // len(panel_results)
+        passed_count = sum(1 for r in panel_results if r.passed)
+        panel_passed = passed_count >= 2
+
+        aggregate_feedback = _aggregate_feedback(panel_results)
+
+        logger.info(
+            "quality.t2.done",
+            request_id=request_id,
+            panel_scores=[r.score for r in panel_results],
+            avg_score=avg_score,
+            passed_count=passed_count,
+            panel_passed=panel_passed,
+        )
+        return T2Result(
+            available=True,
+            passed=panel_passed,
+            score=avg_score,
+            feedback=aggregate_feedback,
+            panel_results=panel_results,
+        )
     except RuntimeError as exc:
         if "No LLM provider" in str(exc):
             logger.info("quality.t2.skipped.no_client", request_id=request_id)
@@ -57,20 +101,49 @@ async def run_t2(request_id: str, outputs: dict[str, GeneratorOutput]) -> T2Resu
         return T2Result(available=False, passed=True, score=0, feedback=f"[T2 judge unavailable: {exc}]")
 
 
-async def _llm_judge(request_id: str, outputs: dict[str, GeneratorOutput], client: Any) -> tuple[int, str]:
-
+async def _run_judge_panel(request_id: str, outputs: dict[str, GeneratorOutput], client: Any) -> list[JudgeResult]:
+    """Run all 3 judges in parallel and return their individual results."""
     summary = _build_mod_summary(outputs)
 
-    prompt = f"""You are a Stardew Valley mod quality judge. Evaluate this generated mod and give a score 1-10.
+    tasks = [
+        _llm_judge(request_id, summary, client, persona)
+        for persona in JUDGE_PERSONAS.values()
+    ]
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    panel: list[JudgeResult] = []
+    for persona, result in zip(JUDGE_PERSONAS.values(), results):
+        if isinstance(result, Exception):
+            logger.warning("quality.t2.judge_error", judge=persona["name"], error=str(result))
+            continue
+        score, feedback, passed = result
+        panel.append(JudgeResult(judge_name=persona["name"], score=score, feedback=feedback, passed=passed))
+
+    return panel
+
+
+async def _llm_judge(
+    request_id: str,
+    summary: str,
+    client: Any,
+    persona: dict[str, str],
+) -> tuple[int, str, bool]:
+    """Run a single judge with given persona, return (score, feedback, passed)."""
+    prompt = f"""You are a {persona["name"]}.
+
+YOUR FOCUS: {persona["focus"]}
+
+Evaluate this Stardew Valley mod and give a score 1-10.
 
 SCORING RUBRIC:
-- 9-10: Excellent — coherent, balanced, creative, correct Content Patcher usage
-- 7-8: Good — minor issues (slightly unbalanced prices, bland descriptions)
-- 5-6: Fair — notable issues (poor prices, illogical triggers, missing polish)
-- 3-4: Poor — significant problems (broken actions, nonsensical content)
-- 1-2: Broken — Content Patcher will crash or mod is incoherent
+- 9-10: Excellent — {persona["focus"]} is outstanding
+- 7-8: Good — minor issues in {persona["focus"]}
+- 5-6: Fair — notable issues in {persona["focus"]}
+- 3-4: Poor — significant problems in {persona["focus"]}
+- 1-2: Broken — critical issues in {persona["focus"]}
 
-Evaluate:
+Mod content to evaluate:
 {summary}
 
 Respond with ONLY this format (no extra text):
@@ -78,8 +151,10 @@ SCORE: <number 1-10>
 FEEDBACK: <2-4 sentence explanation of the main issues and strengths>
 """
 
-    response = await client.complete(prompt, system="You are a Stardew Valley mod quality judge.", max_tokens=300)
-    return _parse_judge_response(response)
+    response = await client.complete(prompt, system=persona["system"], max_tokens=300)
+    score, feedback = _parse_judge_response(response)
+    passed = score >= 7
+    return score, feedback, passed
 
 
 def _build_mod_summary(outputs: dict[str, GeneratorOutput]) -> str:
@@ -128,3 +203,18 @@ def _parse_judge_response(response: str) -> tuple[int, str]:
         feedback = response.strip()[:200]
 
     return score, feedback
+
+
+def _aggregate_feedback(panel_results: list[JudgeResult]) -> str:
+    """Combine individual judge feedbacks into a single aggregate feedback."""
+    if not panel_results:
+        return "[No judge feedback available]"
+
+    parts = []
+    for result in panel_results:
+        parts.append(f"[{result.judge_name}] {result.feedback}")
+
+    passed_count = sum(1 for r in panel_results if r.passed)
+    parts.append(f"(Panel: {passed_count}/{len(panel_results)} judges passed)")
+
+    return " ".join(parts)
