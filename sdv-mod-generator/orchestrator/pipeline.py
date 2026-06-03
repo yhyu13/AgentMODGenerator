@@ -283,13 +283,42 @@ async def run_pipeline(request_id: str, user_id: str, prompt: str) -> PipelineSt
 
 
 async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt: str) -> PipelineState:
-    """Run pipeline and update Redis status with zip_key and t2_score on completion."""
+    """Run pipeline and update Redis + PostgreSQL status on completion."""
+    from storage.queries import save_mod_output, update_mod_request_status
+    from storage.redis import set_pipeline_state
+
     result = await run_pipeline(request_id, user_id, prompt)
+
     await redis_set_status(request_id, result.status)
     if result.zip_key:
         await redis_set_status(request_id, f"done:{result.zip_key}")
     elif result.status == "failed":
         await redis_set_status(request_id, "failed")
+
+    await update_mod_request_status(request_id, result.status)
+    await set_pipeline_state(request_id, {
+        "status": result.status,
+        "errors": result.errors,
+        "outputs": {
+            name: {"files": out.files, "assets": out.assets, "metadata": out.metadata}
+            for name, out in (result.outputs or {}).items()
+        },
+        "t2_feedback": result.t2_feedback,
+        "t2_score": result.t2_score,
+        "zip_key": result.zip_key,
+    })
+
+    files_preview = [path for out in result.outputs.values() for path in out.files.keys()]
+    await save_mod_output(
+        request_id=request_id,
+        zip_key=result.zip_key,
+        zip_url=None,
+        files_preview=files_preview,
+        t1_errors=result.errors,
+        t2_feedback=result.t2_feedback,
+        t2_score=result.t2_score,
+    )
+
     logger.info(
         "pipeline.status_updated",
         request_id=request_id,
@@ -303,3 +332,12 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
 def run_pipeline_background(request_id: str, user_id: str, prompt: str) -> asyncio.Task:
     """Run pipeline in background using asyncio.create_task."""
     return asyncio.create_task(_run_pipeline_and_update_status(request_id, user_id, prompt))
+
+
+async def _run_pipeline_sync(request_id: str, user_id: str, prompt: str) -> None:
+    """Async wrapper for use with asyncio.create_task — runs pipeline in background."""
+    logger.info("pipeline.background_started", request_id=request_id)
+    try:
+        await _run_pipeline_and_update_status(request_id, user_id, prompt)
+    except Exception as e:
+        logger.error("pipeline.background_error", request_id=request_id, error=str(e))

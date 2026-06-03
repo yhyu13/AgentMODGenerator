@@ -1,4 +1,5 @@
 """API routes — P1-impl with real PostgreSQL + Redis."""
+import asyncio
 import uuid
 import secrets
 import structlog
@@ -40,9 +41,10 @@ async def verify_api_key(x_api_key: Annotated[str | None, Header()] = None) -> b
 
 @router.post("/mods/generate", response_model=GenerateResponse)
 async def generate_mod(req: GenerateRequest) -> GenerateResponse:
-    """Start mod generation pipeline in background."""
+    """Start mod generation pipeline (non-blocking). Use /status/{id} to poll."""
     from orchestrator.pipeline import run_pipeline_background
     from storage.redis import set_status as redis_set_status
+    from storage.queries import create_mod_request
 
     request_id = f"req_{uuid.uuid4().hex[:12]}"
     logger.info(
@@ -52,19 +54,11 @@ async def generate_mod(req: GenerateRequest) -> GenerateResponse:
         prompt=req.prompt,
     )
 
-    await create_mod_request(
-        request_id=request_id,
-        user_id=req.user_id,
-        prompt=req.prompt,
-        phase=req.phase or "p1_shop_channel",
-        generators=[],
-        hint={},
-    )
-
-    await redis_set_status(request_id, "pending")
+    await create_mod_request(request_id, req.user_id, req.prompt, "p1_shop_channel", [], {})
+    await redis_set_status(request_id, "running")
     run_pipeline_background(request_id, req.user_id, req.prompt)
 
-    return GenerateResponse(request_id=request_id, status="pending")
+    return GenerateResponse(request_id=request_id, status="running")
 
 
 @router.get("/mods/status/{request_id}")

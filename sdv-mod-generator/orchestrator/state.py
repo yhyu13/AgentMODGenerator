@@ -24,7 +24,7 @@ class PipelineState:
     t2_score: int = 0
     t2_feedback: str = ""
     t2_iterations: int = 0
-    max_t2_iterations: int = 2
+    max_t2_iterations: int = 0
     t2_judge_results: list = field(default_factory=list)
     status: Literal[
         "pending",

@@ -13,7 +13,7 @@ class GenerateRequest(BaseModel):
 
 class GenerateResponse(BaseModel):
     request_id: str
-    status: Literal["pending", "done", "failed"]
+    status: Literal["pending", "running", "done", "failed"]
 
 
 class ModStatusResponse(BaseModel):
