@@ -44,6 +44,26 @@ async def get_pipeline_state(request_id: str) -> dict | None:
     return json.loads(data)
 
 
+async def set_status(request_id: str, status: str, ttl: int = 3600) -> None:
+    """Write mod status to Redis with 1 hour TTL."""
+    client = await get_client()
+    key = f"mod:status:{request_id}"
+    await client.set(key, status, ex=ttl)
+    logger.info("storage.redis.set_status", request_id=request_id, status=status, ttl=ttl)
+
+
+async def get_status(request_id: str) -> str | None:
+    """Read mod status from Redis."""
+    client = await get_client()
+    key = f"mod:status:{request_id}"
+    data = await client.get(key)
+    if data is None:
+        logger.info("storage.redis.get_status", request_id=request_id, hit=False)
+        return None
+    logger.info("storage.redis.get_status", request_id=request_id, hit=True)
+    return data
+
+
 async def close_client() -> None:
     global _client
     if _client:

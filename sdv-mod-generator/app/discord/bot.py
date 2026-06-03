@@ -1,13 +1,15 @@
 """Discord bot client."""
 
 import asyncio
-from typing import Any
+import uuid
 import structlog
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from app.config import get_config
-from app.discord.commands import setup_commands
+from orchestrator.pipeline import run_pipeline_background
+from storage.redis import set_status as redis_set_status
 
 logger = structlog.get_logger()
 
@@ -91,7 +93,11 @@ async def start_bot() -> None:
         logger.warning("discord.bot.start.skipped", reason="no_token")
         return
 
-    _patch_http_for_proxy()
+
+    try:
+        _patch_http_for_proxy()
+    except RuntimeError as exc:
+        logger.warning("discord.bot.proxy.patch.skipped", reason=str(exc))
 
     _bot = commands.Bot(command_prefix="!", intents=_intents)
 
@@ -106,11 +112,65 @@ async def start_bot() -> None:
                 "Hello! I'm Agent Mod 0x01. Use `/generate <prompt>` to create a Stardew Valley mod."
             )
 
-    setup_commands(_bot)
+    @_bot.tree.command(
+        name="generate",
+        description="Generate a Stardew Valley mod from a text prompt",
+    )
+    @app_commands.describe(prompt="Describe the mod you want to create")
+    async def generate_command(interaction: discord.Interaction, prompt: str) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        user_id = str(interaction.user.id)
+        request_id = f"req_{uuid.uuid4().hex[:12]}"
+
+        logger.info(
+            "discord.generate.start",
+            request_id=request_id,
+            user_id=user_id,
+            prompt=prompt,
+        )
+
+        try:
+            await redis_set_status(request_id, "pending")
+            run_pipeline_background(request_id, user_id, prompt)
+
+            await interaction.followup.send(
+                f"Started generation! Request ID: `{request_id}`\nUse `/status {request_id}` to check progress.",
+                ephemeral=True,
+            )
+        except Exception as exc:
+            logger.error("discord.generate.error", request_id=request_id, error=str(exc))
+            await interaction.followup.send(
+                f"Failed to start generation: {exc}",
+                ephemeral=True,
+            )
+
+    @_bot.tree.command(
+        name="status",
+        description="Check the status of a generation request",
+    )
+    @app_commands.describe(request_id="The request ID to check")
+    async def status_command(interaction: discord.Interaction, request_id: str) -> None:
+        from storage.redis import get_status as redis_get_status
+
+        await interaction.response.defer(ephemeral=True)
+
+        current_status = await redis_get_status(request_id)
+        if current_status is None:
+            await interaction.followup.send(
+                f"Status unknown for request `{request_id}`",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.followup.send(
+            f"Request `{request_id}`: **{current_status}**",
+            ephemeral=True,
+        )
 
     @_bot.event
     async def on_ready() -> None:
-        logger.info("discord.bot.ready", user=str(_bot.user))
+        logger.info("discord.bot.ready", user=str(_bot.user), bot_id=_bot.user.id if _bot.user else None)
 
     logger.info("discord.bot.starting", app_id=config.discord_app_id or "global")
     await asyncio.wait_for(_bot.start(token), timeout=30)

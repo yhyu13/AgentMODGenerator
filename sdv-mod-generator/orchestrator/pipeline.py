@@ -7,10 +7,11 @@ from generators.core import GeneratorInput
 from generators.packager import package as packager_func
 from orchestrator.state import PipelineState
 from orchestrator.router import route
-from orchestrator.feedback_router import FeedbackRouter
 from quality.gate_t1 import run_t1
 from quality.gate_t2 import run_t2
 from generators.core import get_game_pack
+from orchestrator.feedback_router import FeedbackRouter
+from storage.redis import set_status as redis_set_status
 
 logger = structlog.get_logger()
 _feedback_router = FeedbackRouter()
@@ -279,3 +280,26 @@ async def run_pipeline(request_id: str, user_id: str, prompt: str) -> PipelineSt
     logger.info("pipeline.start", request_id=request_id, user_id=user_id, prompt=prompt)
     result_dict = await graph.ainvoke(initial_state)
     return PipelineState(**result_dict)
+
+
+async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt: str) -> PipelineState:
+    """Run pipeline and update Redis status with zip_key and t2_score on completion."""
+    result = await run_pipeline(request_id, user_id, prompt)
+    await redis_set_status(request_id, result.status)
+    if result.zip_key:
+        await redis_set_status(request_id, f"done:{result.zip_key}")
+    elif result.status == "failed":
+        await redis_set_status(request_id, "failed")
+    logger.info(
+        "pipeline.status_updated",
+        request_id=request_id,
+        status=result.status,
+        zip_key=result.zip_key,
+        t2_score=result.t2_score,
+    )
+    return result
+
+
+def run_pipeline_background(request_id: str, user_id: str, prompt: str) -> asyncio.Task:
+    """Run pipeline in background using asyncio.create_task."""
+    return asyncio.create_task(_run_pipeline_and_update_status(request_id, user_id, prompt))

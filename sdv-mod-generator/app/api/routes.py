@@ -1,4 +1,5 @@
 """API routes — P1-impl with real PostgreSQL + Redis."""
+import uuid
 import secrets
 import structlog
 from datetime import datetime, timezone
@@ -7,12 +8,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.api.schemas import (
+    GenerateRequest,
+    GenerateResponse,
     ModStatusResponse,
     FilePreviewResponse,
     HistoryResponse,
     HistoryEntry,
 )
 from storage.queries import (
+    create_mod_request,
     get_mod_output,
     get_user_history,
 )
@@ -32,6 +36,78 @@ async def verify_api_key(x_api_key: Annotated[str | None, Header()] = None) -> b
             detail="Invalid or missing API key",
         )
     return True
+
+
+@router.post("/mods/generate", response_model=GenerateResponse)
+async def generate_mod(req: GenerateRequest) -> GenerateResponse:
+    """Start mod generation pipeline in background."""
+    from orchestrator.pipeline import run_pipeline_background
+    from storage.redis import set_status as redis_set_status
+
+    request_id = f"req_{uuid.uuid4().hex[:12]}"
+    logger.info(
+        "api.generate.start",
+        request_id=request_id,
+        user_id=req.user_id,
+        prompt=req.prompt,
+    )
+
+    await create_mod_request(
+        request_id=request_id,
+        user_id=req.user_id,
+        prompt=req.prompt,
+        phase=req.phase or "p1_shop_channel",
+        generators=[],
+        hint={},
+    )
+
+    await redis_set_status(request_id, "pending")
+    run_pipeline_background(request_id, req.user_id, req.prompt)
+
+    return GenerateResponse(request_id=request_id, status="pending")
+
+
+@router.get("/mods/status/{request_id}")
+async def get_mod_status_check(request_id: str) -> dict:
+    """Get current status from Redis cache."""
+    from storage.redis import get_status as redis_get_status
+
+    current_status = await redis_get_status(request_id)
+    if current_status is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Status not found for {request_id}",
+        )
+    return {"request_id": request_id, "status": current_status}
+
+
+@router.get("/mods/download/{request_id}")
+async def get_mod_download(request_id: str) -> dict:
+    """Get presigned S3 download URL for completed mod."""
+    from storage.s3 import get_presigned_url
+
+    output = await get_mod_output(request_id)
+    if not output:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Request {request_id} not found",
+        )
+
+    if output["status"] != "done":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Mod not ready. Current status: {output['status']}",
+        )
+
+    zip_key = output.get("zip_key")
+    if not zip_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Zip file not found",
+        )
+
+    download_url = get_presigned_url(zip_key)
+    return {"request_id": request_id, "download_url": download_url}
 
 
 @router.get("/mods/{request_id}", response_model=ModStatusResponse)

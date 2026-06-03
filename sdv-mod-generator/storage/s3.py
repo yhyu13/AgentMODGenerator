@@ -94,3 +94,20 @@ def download_zip(zip_key: str, dest_path: str) -> None:
     client = get_client()
     client.download_file(_BUCKET, zip_key, dest_path)
     logger.info("storage.s3.download_done", zip_key=zip_key, dest_path=dest_path)
+
+
+def get_presigned_url(zip_key: str, expires_in: int = 3600) -> str:
+    """Get presigned URL for downloading zip from S3, or file:// URL for local mode."""
+    _validate_zip_key(zip_key)
+    if _is_local_mode():
+        local_path = _local_path(zip_key)
+        return f"file://{local_path}"
+
+    client = get_client()
+    url = client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": _BUCKET, "Key": zip_key},
+        ExpiresIn=expires_in,
+    )
+    logger.info("storage.s3.presigned_url", zip_key=zip_key, expires_in=expires_in)
+    return url
