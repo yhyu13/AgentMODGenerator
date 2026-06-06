@@ -311,6 +311,11 @@ async def run_pipeline(request_id: str, user_id: str, prompt: str) -> PipelineSt
 
 async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt: str) -> PipelineState:
     """Run pipeline and update Redis + PostgreSQL status on completion."""
+    from app.metrics import (
+        record_generator_outcome,
+        record_pipeline_run,
+        record_t2_score,
+    )
     from storage.queries import save_mod_output, update_mod_request_status
     from storage.redis import set_pipeline_state
 
@@ -352,6 +357,15 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
         t2_feedback=result.t2_feedback,
         t2_score=result.t2_score,
     )
+
+    # Metrics — keep label cardinality bounded (no per-request-id).
+    record_pipeline_run(status=result.status)
+    if result.t2_available and 0 <= result.t2_score <= 10:
+        record_t2_score(result.t2_score)
+    for gen_name in result.generators_succeeded:
+        record_generator_outcome(gen_name, succeeded=True)
+    for gen_name in result.generators_failed:
+        record_generator_outcome(gen_name, succeeded=False)
 
     logger.info(
         "pipeline.status_updated",

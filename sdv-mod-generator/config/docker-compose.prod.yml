@@ -1,0 +1,135 @@
+# =============================================================================
+# docker-compose.prod.yml — production stack
+# =============================================================================
+# Brings up the full app on a fresh host: api (+ discord bot in the same
+# process via FastAPI lifespan), postgres, redis, and minio (S3-compatible
+# storage). Use `make deploy-local` from the repo root to start it.
+#
+# Required env at compose time (sourced from your secrets manager; NEVER
+# commit real values):
+#   APP_ENV=prod
+#   DATABASE_URL  — postgres://user:pass@postgres:5432/sdv_mods
+#   REDIS_URL     — redis://redis:6379/0
+#   S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   DISCORD_BOT_TOKEN, DISCORD_APP_ID
+#   API_KEY
+#
+# See config/prod.env.example for the full list.
+# =============================================================================
+version: "3.9"
+
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-prod}
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+  REDIS_URL: ${REDIS_URL:?REDIS_URL must be set}
+  S3_BUCKET: ${S3_BUCKET:-sdv-mod-generator}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID must be set}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY must be set}
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+  DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN must be set}
+  DISCORD_APP_ID: ${DISCORD_APP_ID:-}
+  API_KEY: ${API_KEY:?API_KEY must be set}
+  API_OWNER_USER_ID: ${API_OWNER_USER_ID:-}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.minimaxi.com/v1}
+  OPENAI_MODEL: ${OPENAI_MODEL:-MiniMax-M2.7}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sdv_prod_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sdv}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-sdv_mods}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-sdv}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sdv_prod_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: sdv_prod_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: sdv_prod_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb -p local/$${S3_BUCKET:-sdv-mod-generator} --ignore-existing &&
+      echo 'minio bucket ready'
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+      S3_BUCKET: ${S3_BUCKET:-sdv-mod-generator}
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sdv_prod_api
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - app_outputs:/app/outputs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/deep"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  app_outputs:
