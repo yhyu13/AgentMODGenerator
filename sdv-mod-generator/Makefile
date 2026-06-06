@@ -1,4 +1,4 @@
-.PHONY: install install-test test lint clean build run stop
+.PHONY: install install-test test lint clean build run stop deploy-local deploy-stop rotate-token check-no-plaintext-secrets
 
 # Compute paths relative to the Makefile's directory (supports make run from parent dir)
 _MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -43,3 +43,26 @@ run:
 
 stop:
 	pkill -f "uvicorn app.main:app" || true
+
+deploy-local:
+	@echo "==> deploy-local: bringing up the prod stack"
+	./scripts/deploy_local.sh
+
+deploy:
+	@echo "==> deploy: deploy-local + SDV smoke test (if SDV_INSTALL_PATH is set)"
+	./scripts/deploy_local.sh
+
+deploy-stop:
+	cd $(_MAKEFILE_DIR) && docker compose -f config/docker-compose.prod.yml down
+
+smoke-test:
+	@echo "==> smoke-test: SDV runtime load test"
+	./scripts/sdv_smoke_test.sh
+
+rotate-token:
+	@echo "==> rotate-token: see checklist and optionally restart the api container"
+	./scripts/rotate_token.sh $$TOKEN_FILE
+
+check-no-plaintext-secrets:
+	@echo "==> check-no-plaintext-secrets: scanning $$FILE (default config/.env)"
+	./scripts/check_no_plaintext_secrets.sh $${FILE:-config/.env}
