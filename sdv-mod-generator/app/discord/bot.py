@@ -18,6 +18,7 @@ _intents.messages = True
 _intents.message_content = True
 
 _bot: commands.Bot | None = None
+_bot_ready: asyncio.Event = asyncio.Event()
 
 
 def _patch_http_for_proxy() -> None:
@@ -171,10 +172,32 @@ async def start_bot() -> None:
     @_bot.event
     async def on_ready() -> None:
         logger.info("discord.bot.ready", user=str(_bot.user), bot_id=_bot.user.id if _bot.user else None)
+        _bot_ready.set()
 
     logger.info("discord.bot.starting", app_id=config.discord_app_id or "global")
-    await asyncio.wait_for(_bot.start(token), timeout=30)
+    # No timeout: bot.start() is the long-lived connection. A 30s wait_for
+    # previously killed the bot before the SOCKS5 proxy + WebSocket
+    # handshake completed (verified in P4.6 task 3 — on_ready fires
+    # after ~30-40s through the proxy). If the token is bad,
+    # discord.errors.LoginFailure is raised on the first call instead.
+    try:
+        await _bot.start(token)
+    except discord.errors.LoginFailure as exc:
+        logger.error("discord.bot.login_failed", error=str(exc))
+        raise
+    except Exception as exc:
+        logger.error("discord.bot.start.failed", error=str(exc), error_type=type(exc).__name__)
+        raise
 
 
 def get_bot() -> commands.Bot | None:
     return _bot
+
+
+def is_bot_ready() -> bool:
+    """Whether the Discord bot has reached on_ready.
+
+    Used by /health to surface whether the bot is actually connected,
+    not just whether the lifespan task is alive (P4.6 task 3).
+    """
+    return _bot_ready.is_set()

@@ -80,6 +80,18 @@ def verify_zip(zip_path: Path) -> bool:
 async def main():
     print(f"[Discord Flow Test] Prompt: {PROMPT}\n")
 
+    # SMAPI validator import — try package import first, fall back to direct
+    # file load so the script can run via `python tests/test_discord_flow.py`
+    try:
+        from tests.smapi_validate import validate_zip_contents
+    except ModuleNotFoundError:
+        import importlib.util
+        _smapi_path = Path(__file__).parent / "smapi_validate.py"
+        _spec = importlib.util.spec_from_file_location("smapi_validate", _smapi_path)
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        validate_zip_contents = _mod.validate_zip_contents
+
     # Submit
     print("[1/3] Submitting...")
     request_id = await submit_generation("test_user", PROMPT)
@@ -101,6 +113,15 @@ async def main():
     print("[3/3] Verifying ZIP...")
     local_dir = Path("/tmp/sdv-mod-generator/outputs")
     ok = verify_zip(local_dir / zip_key)
+
+    # SMAPI load-time check (P4.6 task 2)
+    print("\n[3b/3] SMAPI manifest validation...")
+    smapi_errors = validate_zip_contents(local_dir / zip_key)
+    if smapi_errors:
+        print(f"  SMAPI errors: {smapi_errors}")
+        print("FAILED: SMAPI validation")
+        sys.exit(1)
+    print("  SMAPI manifest validation PASSED")
 
     print()
     if ok:

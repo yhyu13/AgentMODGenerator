@@ -26,6 +26,11 @@ class ModStatusResponse(BaseModel):
     generators_succeeded: list[str] = Field(default_factory=list)
     t2_feedback: str | None = None
     t2_score: int | None = None
+    t2_max_score: int | None = None
+    t2_pass_threshold: int | None = None
+    t2_passed: bool | None = None
+    t2_available: bool | None = None
+    t2_panel_passed_count: int | None = None
     created_at: datetime
 
 
