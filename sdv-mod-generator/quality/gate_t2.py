@@ -15,6 +15,25 @@ _INJECTION_PATTERNS = [
     re.compile(r"^FEEDBACK:\s*.+", re.MULTILINE | re.IGNORECASE),
 ]
 
+_THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
+_SCORE_FALLBACK_RE = re.compile(r"\b(10|[0-9])\b")
+_VERDICT_LINE_RE = re.compile(r"^(SCORE|FEEDBACK)\s*:", re.IGNORECASE)
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Remove <think>...</think> blocks emitted by reasoning models.
+
+    Some models (e.g. MiniMax-M2.7, Claude with extended thinking) prepend a thinking
+    block before the structured answer. If we don't strip it, the parser sees
+    'SCORE:' only as raw text inside the think block and the verdict never lands
+    on its own line, so score defaults to 0 and feedback is the truncated think
+    block — i.e. the false-pass from commit 431c3fe.
+    """
+    if not text:
+        return ""
+    stripped = _THINK_BLOCK_RE.sub("", text)
+    return stripped.strip()
+
 
 def _sanitize_for_judge(content: str) -> str:
     sanitized = content
@@ -151,7 +170,7 @@ SCORE: <number 1-10>
 FEEDBACK: <2-4 sentence explanation of the main issues and strengths>
 """
 
-    response = await client.complete(prompt, system=persona["system"], max_tokens=300)
+    response = await client.complete(prompt, system=persona["system"], max_tokens=1000)
     score, feedback = _parse_judge_response(response)
     passed = score >= 7
     return score, feedback, passed
@@ -184,23 +203,45 @@ def _build_mod_summary(outputs: dict[str, GeneratorOutput]) -> str:
 
 
 def _parse_judge_response(response: str) -> tuple[int, str]:
-    lines = response.strip().split("\n")
+    """Parse a judge's response into (score, feedback).
+
+    Handles three failure modes from commit 431c3fe:
+    1. Reasoning model emits ``...`` block before the verdict — stripped first.
+    2. Model returns verdict on a single line (no newline separator) — regex fallback.
+    3. Model returns no SCORE: line at all — search for a lone 0-10 number as last resort.
+    """
+    stripped = _strip_think_blocks(response)
+    lines = stripped.split("\n") if stripped else []
     score = 0
     feedback = ""
+    found_verdict_line = False
 
     for line in lines:
         line = line.strip()
-        if line.startswith("SCORE:"):
+        if not line:
+            continue
+        if _VERDICT_LINE_RE.match(line):
+            found_verdict_line = True
+        if line.upper().startswith("SCORE:"):
             try:
-                score = int(line.split(":")[1].strip())
+                token = line.split(":", 1)[1].strip().split()[0]
+                score = int(token)
                 score = max(0, min(10, score))
             except (ValueError, IndexError):
                 score = 0
-        elif line.startswith("FEEDBACK:"):
+        elif line.upper().startswith("FEEDBACK:"):
             feedback = line.split(":", 1)[1].strip()
 
+    if not found_verdict_line:
+        m = _SCORE_FALLBACK_RE.search(stripped)
+        if m:
+            try:
+                score = max(0, min(10, int(m.group(1))))
+            except ValueError:
+                pass
+
     if not feedback:
-        feedback = response.strip()[:200]
+        feedback = stripped[-200:] if stripped else response.strip()[:200]
 
     return score, feedback
 

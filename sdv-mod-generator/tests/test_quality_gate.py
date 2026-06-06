@@ -82,3 +82,39 @@ class TestT2Gate:
         assert result.score == 8
         assert result.feedback == "good mod"
         assert result.available is True
+
+    def test_parse_strips_think_block_before_verdict(self):
+        from quality.gate_t2 import _parse_judge_response
+        response = (
+            "<think>The mod has a TV channel that sells seeds. "
+            "It looks well-balanced. SCORE: 8 FEEDBACK: solid concept</think>\n"
+            "SCORE: 8\n"
+            "FEEDBACK: Solid concept with good balance and clear pricing."
+        )
+        score, feedback = _parse_judge_response(response)
+        assert score == 8, f"expected score 8, got {score}"
+        assert "Solid concept" in feedback
+
+    def test_parse_handles_single_line_response(self):
+        from quality.gate_t2 import _parse_judge_response
+        response = "SCORE: 7 FEEDBACK: Decent implementation"
+        score, feedback = _parse_judge_response(response)
+        assert score == 7
+        assert "Decent" in feedback
+
+    def test_parse_fallback_to_bare_number(self):
+        from quality.gate_t2 import _parse_judge_response
+        response = (
+            "<think>I'll give this a 6. The structure is okay but the "
+            "balance could use work.</think>\n"
+            "Final score: 6 — decent but unbalanced."
+        )
+        score, feedback = _parse_judge_response(response)
+        assert score == 6, f"expected fallback score 6, got {score}"
+        assert "decent" in feedback.lower() or "unbalanced" in feedback.lower()
+
+    def test_parse_returns_zero_when_no_signal(self):
+        from quality.gate_t2 import _parse_judge_response
+        response = "No relevant content here"
+        score, feedback = _parse_judge_response(response)
+        assert score == 0

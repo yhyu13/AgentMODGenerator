@@ -34,6 +34,12 @@ def package(request_id: str, files: dict[str, dict], assets: list[str]) -> str:
 
     Writes zip to LOCAL_OUTPUT_DIR/mods/{request_id}/{request_id}.zip
     Returns the zip key (filename only).
+
+    Fails loudly on any asset issue — missing files, absolute paths, rejected
+    paths, write errors. The pipeline catches these and marks the request
+    failed with the path in the error. This replaces the previous behavior
+    of silently skipping bad assets (the "swallowed errors" pattern from
+    AGENTS.md root-causes table).
     """
     logger.info("packager.run", request_id=request_id, file_count=len(files), asset_count=len(assets))
 
@@ -43,6 +49,7 @@ def package(request_id: str, files: dict[str, dict], assets: list[str]) -> str:
     mod_dir.mkdir(parents=True, exist_ok=True)
     zip_path = mod_dir / f"{request_id}.zip"
 
+    written_paths: set[str] = set()
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_path, content in files.items():
             normalized = _normalize_path(file_path)
@@ -54,25 +61,31 @@ def package(request_id: str, files: dict[str, dict], assets: list[str]) -> str:
                 zf.writestr(normalized, content)
             else:
                 zf.writestr(normalized, str(content))
+            written_paths.add(normalized)
 
         for asset_path in assets:
             if not asset_path:
-                continue
+                raise ValueError(f"packager: empty asset path in request {request_id}")
             if not _validate_asset_path(asset_path):
-                logger.warning("packager.asset_path_rejected", path=asset_path)
-                continue
+                raise ValueError(f"packager: asset path rejected (path traversal or null byte): {asset_path!r}")
             if os.path.isabs(asset_path):
-                logger.warning("packager.absolute_path_rejected", path=asset_path)
-                continue
+                raise ValueError(f"packager: asset path must be relative, got absolute: {asset_path!r}")
             normalized = _normalize_path(asset_path)
             if not os.path.exists(asset_path):
-                logger.warning("packager.asset_missing", path=asset_path)
+                raise FileNotFoundError(
+                    f"packager: asset not found on disk: {asset_path!r} "
+                    f"(generator should use add_file for in-memory content, "
+                    f"not add_asset which expects a real file path)"
+                )
+            if normalized in written_paths:
+                # already written from in-memory `files`; don't double-write
+                logger.info("packager.asset_already_in_files", path=asset_path)
                 continue
             try:
                 zf.write(asset_path, normalized)
+                written_paths.add(normalized)
             except Exception as exc:
-                logger.warning("packager.asset_write_failed", path=asset_path, error=str(exc))
-                continue
+                raise OSError(f"packager: failed to write asset {asset_path!r}: {exc}") from exc
 
     zip_key = f"mods/{request_id}/{request_id}.zip"
     logger.info("packager.done", request_id=request_id, zip_key=zip_key, zip_size=zip_path.stat().st_size)

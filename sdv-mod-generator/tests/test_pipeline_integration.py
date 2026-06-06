@@ -157,6 +157,132 @@ class TestNodePackage:
         assert "req_test" in result.zip_key
         assert result.zip_key.endswith(".zip")
 
+    @pytest.mark.asyncio
+    async def test_package_fails_on_missing_asset(self):
+        from generators.core import GeneratorOutput
+        state = PipelineState(
+            request_id="req_missing_asset",
+            user_id="test_user",
+            prompt="shop",
+            game="stardew_valley",
+            phase="shop_channel",
+        )
+        out = GeneratorOutput()
+        out.add_file("manifest.json", {"Format": "1.29.0"})
+        out.add_asset("/nonexistent/path/sprite.png")
+        state.outputs = {"manifest_generator": out}
+        result = await node_package(state)
+        assert result.status == "failed"
+        assert result.zip_key is None
+        assert any("sprite.png" in e for e in result.errors), f"error should include asset path, got: {result.errors}"
+
+    @pytest.mark.asyncio
+    async def test_package_fails_on_absolute_asset_path(self):
+        from generators.core import GeneratorOutput
+        state = PipelineState(
+            request_id="req_abs_asset",
+            user_id="test_user",
+            prompt="shop",
+            game="stardew_valley",
+            phase="shop_channel",
+        )
+        out = GeneratorOutput()
+        out.add_file("manifest.json", {"Format": "1.29.0"})
+        out.add_asset("/etc/passwd")
+        state.outputs = {"manifest_generator": out}
+        result = await node_package(state)
+        assert result.status == "failed"
+        assert any("absolute" in e.lower() for e in result.errors)
+
+
+class TestNodeGenerateFailureHandling:
+    """Verify a single bad generator does not fail-stop the pipeline.
+
+    Replaces the old behavior where the first generator exception aborted
+    the whole pipeline (the "swallowed errors" pattern from AGENTS.md).
+    """
+
+    @pytest.mark.asyncio
+    async def test_failed_generator_surfaced_not_swallowed(self):
+        from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
+        from orchestrator.pipeline import node_generate
+
+        class GoodGenerator(BaseGenerator):
+            name = "good_generator"
+            phase = "shop_channel"
+            game = "stardew_valley"
+
+            async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
+                out = GeneratorOutput()
+                out.add_file("manifest.json", {"Format": "1.29.0"})
+                return out
+
+        class BadGenerator(BaseGenerator):
+            name = "bad_tv_generator"
+            phase = "shop_channel"
+            game = "stardew_valley"
+
+            async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
+                from pydantic import ValidationError
+                raise ValidationError.from_exception_data(
+                    "TVChannelOutput",
+                    [{"type": "missing", "loc": ("Channels",), "input": {}}],
+                )
+
+        from unittest.mock import patch
+        with patch("orchestrator.pipeline.get_game_pack") as mock_pack:
+            mock_pack.return_value.get_generator.side_effect = lambda n, p: {
+                "good_generator": GoodGenerator,
+                "bad_tv_generator": BadGenerator,
+            }[n]
+            state = PipelineState(
+                request_id="req_iter3",
+                user_id="test_user",
+                prompt="make a tv shopping channel",
+                game="stardew_valley",
+                phase="shop_channel",
+                generators=["good_generator", "bad_tv_generator"],
+            )
+            result = await node_generate(state)
+
+        assert "good_generator" in result.outputs, f"good gen should run, got outputs: {list(result.outputs.keys())}"
+        assert "bad_tv_generator" in result.generators_failed, f"bad gen should be in failed list, got: {result.generators_failed}"
+        assert "good_generator" in result.generators_succeeded
+        assert "bad_tv_generator" not in result.generators_succeeded
+        assert any("bad_tv_generator" in e for e in result.errors), f"errors should include generator name, got: {result.errors}"
+        assert any("ValidationError" in e for e in result.errors), f"errors should include exception type, got: {result.errors}"
+        assert result.status != "failed", f"status should not be failed (pipeline continues), got: {result.status}"
+
+    @pytest.mark.asyncio
+    async def test_all_generators_failed_means_status_failed(self):
+        from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
+        from orchestrator.pipeline import node_generate
+
+        class BadGenerator(BaseGenerator):
+            name = "bad_one"
+            phase = "shop_channel"
+            game = "stardew_valley"
+
+            async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
+                raise RuntimeError("intentional failure")
+
+        from unittest.mock import patch
+        with patch("orchestrator.pipeline.get_game_pack") as mock_pack:
+            mock_pack.return_value.get_generator.return_value = BadGenerator
+            state = PipelineState(
+                request_id="req_all_bad",
+                user_id="test_user",
+                prompt="x",
+                game="stardew_valley",
+                phase="shop_channel",
+                generators=["bad_one"],
+            )
+            result = await node_generate(state)
+
+        assert result.status == "failed"
+        assert "bad_one" in result.generators_failed
+        assert not result.outputs
+
 
 class TestFullPipeline:
     @pytest.mark.asyncio

@@ -121,6 +121,8 @@ async def get_mod_status(request_id: str) -> ModStatusResponse:
             zip_url=redis_state.get("zip_key"),
             files_preview=[f for out in redis_state.get("outputs", {}).values() for f in out.get("files", {}).keys()],
             t1_errors=redis_state.get("errors", []),
+            generators_failed=redis_state.get("generators_failed", []),
+            generators_succeeded=redis_state.get("generators_succeeded", []),
             t2_feedback=redis_state.get("t2_feedback"),
             t2_score=redis_state.get("t2_score"),
             created_at=redis_state.get("created_at", datetime.now(timezone.utc).isoformat()),

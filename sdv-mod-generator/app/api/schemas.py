@@ -22,6 +22,8 @@ class ModStatusResponse(BaseModel):
     zip_url: str | None = None
     files_preview: list[str] = Field(default_factory=list)
     t1_errors: list[str] = Field(default_factory=list)
+    generators_failed: list[str] = Field(default_factory=list)
+    generators_succeeded: list[str] = Field(default_factory=list)
     t2_feedback: str | None = None
     t2_score: int | None = None
     created_at: datetime

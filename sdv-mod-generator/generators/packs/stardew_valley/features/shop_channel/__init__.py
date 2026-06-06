@@ -386,7 +386,6 @@ class ItemSpritesGenerator(BaseGenerator):
             "SourceRect": {"X": 0, "Y": 0, "Width": 32, "Height": 32},
             "SpriteSheet": "assets/sprites/shop_sprites.png",
         })
-        out.add_asset("assets/sprites/shop_sprites.png")
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
@@ -412,7 +411,6 @@ class UIAssetsGenerator(BaseGenerator):
             "SpriteSheet": "assets/ui/catalog_background.png",
             "SourceRect": {"X": 0, "Y": 0, "Width": 16, "Height": 16},
         })
-        out.add_asset("assets/ui/catalog_background.png")
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:

@@ -17,6 +17,8 @@ class PipelineState:
     hint: dict = field(default_factory=dict)
     outputs: dict[str, GeneratorOutput] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    generators_failed: list[str] = field(default_factory=list)
+    generators_succeeded: list[str] = field(default_factory=list)
     zip_key: str | None = None
     t1_passed: bool = True
     t2_passed: bool = True
@@ -24,7 +26,7 @@ class PipelineState:
     t2_score: int = 0
     t2_feedback: str = ""
     t2_iterations: int = 0
-    max_t2_iterations: int = 0
+    max_t2_iterations: int = 1
     t2_judge_results: list = field(default_factory=list)
     status: Literal[
         "pending",

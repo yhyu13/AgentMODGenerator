@@ -72,8 +72,8 @@ async def node_generate(state: PipelineState) -> PipelineState:
         if gen_cls is None:
             logger.error("pipeline.generator_not_found", request_id=state.request_id, generator=gen_name, game=state.game)
             state.errors.append(f"Generator not found: {gen_name}")
-            state.status = "failed"
-            return state
+            state.generators_failed.append(gen_name)
+            continue
 
         try:
             prior = {k: v for k, v in state.outputs.items()}
@@ -89,6 +89,7 @@ async def node_generate(state: PipelineState) -> PipelineState:
             gen = gen_cls()
             output = await gen.generate(inp)
             state.outputs[gen_name] = output
+            state.generators_succeeded.append(gen_name)
             logger.info(
                 "pipeline.generator_done",
                 request_id=state.request_id,
@@ -96,14 +97,35 @@ async def node_generate(state: PipelineState) -> PipelineState:
                 files=len(output.files),
             )
         except Exception as exc:
-            logger.error("pipeline.generator_failed", request_id=state.request_id, generator=gen_name, error=str(exc))
-            state.errors.append(f"{gen_name}: {exc}")
-            state.status = "failed"
-            return state
+            logger.error(
+                "pipeline.generator_failed",
+                request_id=state.request_id,
+                generator=gen_name,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            state.errors.append(f"{gen_name}: {type(exc).__name__}: {exc}")
+            state.generators_failed.append(gen_name)
+            # Continue with the next generator instead of fail-stop. The
+            # final state.generators_failed list is surfaced in the API
+            # response and the e2e regression test. This replaces the old
+            # fail-stop behavior where one bad generator killed the whole
+            # pipeline (the "swallowed errors" pattern from AGENTS.md
+            # root-causes table).
+            continue
+
+    if state.generators_failed:
+        logger.warning(
+            "pipeline.partial_generation",
+            request_id=state.request_id,
+            failed=state.generators_failed,
+            succeeded=state.generators_succeeded,
+        )
 
     if not state.outputs and state.errors:
         logger.error("pipeline.no_outputs", request_id=state.request_id, errors=state.errors)
         state.errors.append("all generators failed: no outputs produced")
+        state.status = "failed"
 
     return state
 
@@ -128,6 +150,7 @@ def node_t1_gate(state: PipelineState) -> PipelineState:
 
 async def node_t2_gate(state: PipelineState) -> PipelineState:
     """Run Tier 2 LLM judge — blocks on failure up to max_t2_iterations."""
+    state.t2_iterations += 1
     logger.info("pipeline.t2_gate", request_id=state.request_id, iteration=state.t2_iterations)
     state.status = "t2_gating"
 
@@ -225,9 +248,10 @@ def build_graph() -> StateGraph:
             return "end"
         if state.t2_passed:
             return "package"
-        # T2 failed — check if we have iterations left
+        # t2_iterations is incremented in node_t2_gate (state-mutation in this
+        # function is dropped by LangGraph between nodes — see AGENTS.md root
+        # cause "max_t2_iterations=2 + invalid LLM output = infinite loop").
         if state.t2_iterations < state.max_t2_iterations:
-            state.t2_iterations += 1
             logger.info(
                 "pipeline.t2.retry",
                 request_id=state.request_id,
@@ -299,6 +323,8 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
     await set_pipeline_state(request_id, {
         "status": result.status,
         "errors": result.errors,
+        "generators_failed": result.generators_failed,
+        "generators_succeeded": result.generators_succeeded,
         "outputs": {
             name: {"files": out.files, "assets": out.assets, "metadata": out.metadata}
             for name, out in (result.outputs or {}).items()
