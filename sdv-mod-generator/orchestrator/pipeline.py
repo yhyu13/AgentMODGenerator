@@ -160,11 +160,14 @@ async def node_t2_gate(state: PipelineState) -> PipelineState:
         state.t2_available = result.available
         state.t2_score = result.score
         state.t2_feedback = result.feedback
+        state.t2_panel_passed_count = sum(1 for jr in result.panel_results if jr.passed)
         state.t2_judge_results.append({
             "iteration": state.t2_iterations,
             "score": result.score,
             "feedback": result.feedback,
             "passed": result.passed,
+            "panel_scores": [jr.score for jr in result.panel_results],
+            "panel_passed_count": state.t2_panel_passed_count,
         })
     except Exception as exc:
         logger.warning("pipeline.t2_gate.error", request_id=state.request_id, error=str(exc))
@@ -331,6 +334,11 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
         },
         "t2_feedback": result.t2_feedback,
         "t2_score": result.t2_score,
+        "t2_passed": result.t2_passed,
+        "t2_available": result.t2_available,
+        "t2_max_score": 10,
+        "t2_pass_threshold": 7,
+        "t2_panel_passed_count": result.t2_panel_passed_count,
         "zip_key": result.zip_key,
     })
 

@@ -15,6 +15,19 @@ _INJECTION_PATTERNS = [
     re.compile(r"^FEEDBACK:\s*.+", re.MULTILINE | re.IGNORECASE),
 ]
 
+T2_MAX_SCORE: int = 10
+T2_PASS_THRESHOLD: int = 7
+T2_PANEL_PASS_COUNT: int = 2
+"""T2 score contract (P4.6 task 4).
+
+- t2_score is an integer in [0, T2_MAX_SCORE] (averaged across 3 judges).
+- A single judge passes if its score >= T2_PASS_THRESHOLD.
+- The mod passes T2 overall if >= T2_PANEL_PASS_COUNT judges pass.
+- t2_available distinguishes 'judges ran and produced a real score' from
+  'judges skipped (no LLM provider)' — a 0 with available=False means
+  the gate was bypassed, NOT that the mod is bad quality.
+"""
+
 _THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
 _SCORE_FALLBACK_RE = re.compile(r"\b(10|[0-9])\b")
 _VERDICT_LINE_RE = re.compile(r"^(SCORE|FEEDBACK)\s*:", re.IGNORECASE)
@@ -91,7 +104,7 @@ async def run_t2(request_id: str, outputs: dict[str, GeneratorOutput]) -> T2Resu
 
         avg_score = sum(r.score for r in panel_results) // len(panel_results)
         passed_count = sum(1 for r in panel_results if r.passed)
-        panel_passed = passed_count >= 2
+        panel_passed = passed_count >= T2_PANEL_PASS_COUNT
 
         aggregate_feedback = _aggregate_feedback(panel_results)
 
@@ -172,7 +185,7 @@ FEEDBACK: <2-4 sentence explanation of the main issues and strengths>
 
     response = await client.complete(prompt, system=persona["system"], max_tokens=1000)
     score, feedback = _parse_judge_response(response)
-    passed = score >= 7
+    passed = score >= T2_PASS_THRESHOLD
     return score, feedback, passed
 
 

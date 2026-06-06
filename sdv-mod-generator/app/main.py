@@ -49,6 +49,18 @@ async def lifespan(app: FastAPI):
     if get_config().discord_bot_token:
         from app.discord.bot import start_bot
         bot_task = asyncio.create_task(start_bot())
+        # Log if the bot task dies so silent failures are visible
+        def _on_bot_done(t: asyncio.Task) -> None:
+            try:
+                exc = t.exception()
+            except asyncio.CancelledError:
+                logger.info("startup.discord_bot.cancelled")
+                return
+            if exc is not None:
+                logger.error("startup.discord_bot.crashed", error=str(exc), error_type=type(exc).__name__)
+            else:
+                logger.info("startup.discord_bot.stopped_cleanly")
+        bot_task.add_done_callback(_on_bot_done)
         logger.info("startup.discord_bot.started")
 
     yield
@@ -94,6 +106,11 @@ async def discord_webhook(request: Request) -> dict[str, Any]:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "ts": datetime.now(timezone.utc).isoformat()}
+    from app.discord.bot import is_bot_ready
+    return {
+        "status": "ok",
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "discord_bot_ready": is_bot_ready(),
+    }
 
 

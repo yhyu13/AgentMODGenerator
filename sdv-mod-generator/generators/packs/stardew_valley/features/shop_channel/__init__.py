@@ -321,48 +321,63 @@ class MailSystemGenerator(BaseGenerator):
 
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
-        prompt = f'''Create Stardew Valley mail letters for: "{inp["prompt"]}"
+        prompt = f'''Create 2 short Stardew Valley mail letters for a mod about: "{inp["prompt"]}"
 
-Create 2-3 mail letters:
-1. A broadcast announcement mail (contains "broadcast" in the key) that welcomes players
-2. A purchase confirmation mail that delivers the purchased item
-3. A catalogue preview mail sent after first purchase
+CRITICAL: output ONLY valid JSON, no other text. Schema:
+{{"mails":[{{"mail_key":"<snake_case>","text":"<short>"}}]}}
 
-For each:
-- mail_key: snake_case identifier
-- text: use @ for player name, ^ splits paragraphs, - signs off
-- Use "broadcast" prefix for TV-triggered mail (these auto-show when player watches TV)
+Rules:
+- 2 mails, not 3 (avoids truncation)
+- mail_key: snake_case, prefix first one with "broadcast_"
+- text: 1-2 short paragraphs separated by ^
+- use @ for player name, - to sign off
+- keep each text under 200 chars'''
 
-Keep brief and in-character.'''
+        # Retry on JSON decode / validation error. The LLM (MiniMax-M2.7 via
+        # MiniMax API) intermittently truncates the response mid-sentence when
+        # asked to produce 3 long mails. The 2nd attempt is a tighter prompt
+        # that has historically fit within the token budget.
+        for attempt in range(2):
+            try:
+                result = await generate_structured(
+                    prompt, MailListOutput,
+                    system=llm_system_prompt(),
+                    max_tokens=8192,
+                )
+                mails = MailListOutput(**result).mails
+                mail_keys = []
+                for mail in mails:
+                    safe_key = _sanitize_key(mail.mail_key)
+                    out.add_file(f"mail/{safe_key}.json", {safe_key: mail.text})
+                    mail_keys.append(safe_key)
+                out.metadata["mail_keys"] = mail_keys
+                out.metadata["broadcast_key"] = next((k for k in mail_keys if "broadcast" in k), mail_keys[0] if mail_keys else "tv_shopping_broadcast")
+                out.metadata["purchase_key"] = next((k for k in mail_keys if "purchase" in k or "delivery" in k), mail_keys[1] if len(mail_keys) > 1 else mail_keys[0])
+                out.metadata["catalogue_key"] = next((k for k in mail_keys if "catalogue" in k or "preview" in k), mail_keys[2] if len(mail_keys) > 2 else None)
+                return out
+            except (ValueError, RuntimeError, IOError, ValidationError) as exc:
+                if attempt == 0:
+                    logger.warning(
+                        "mail_system_generator.retry",
+                        attempt=attempt,
+                        error=str(exc)[:200],
+                    )
+                    continue
+                logger.error("mail_system_generator.failed", error=str(exc))
 
-        try:
-            result = await generate_structured(
-                prompt, MailListOutput,
-                system=llm_system_prompt(),
-                max_tokens=4096,
-            )
-            mails = MailListOutput(**result).mails
-            mail_keys = []
-            for mail in mails:
-                safe_key = _sanitize_key(mail.mail_key)
-                out.add_file(f"mail/{safe_key}.json", {safe_key: mail.text})
-                mail_keys.append(safe_key)
-            out.metadata["mail_keys"] = mail_keys
-            out.metadata["broadcast_key"] = next((k for k in mail_keys if "broadcast" in k), mail_keys[0] if mail_keys else "tv_shopping_broadcast")
-            out.metadata["purchase_key"] = next((k for k in mail_keys if "purchase" in k or "delivery" in k), mail_keys[1] if len(mail_keys) > 1 else mail_keys[0])
-            out.metadata["catalogue_key"] = next((k for k in mail_keys if "catalogue" in k or "preview" in k), mail_keys[2] if len(mail_keys) > 2 else None)
-        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
-            logger.error("mail_system_generator.failed", error=str(exc))
-            out.add_file("mail/tv_shopping_broadcast.json", {
-                "tv_shopping_broadcast": "Dear @, ^Welcome to the TV Shopping Network! Your exclusive shopping channel is now available. ^Watch it on TV to see this week's special offers!^  - The TV Shopping Network"
-            })
-            out.add_file("mail/tv_shopping_delivery.json", {
-                "tv_shopping_delivery": "Dear @, ^Your order has arrived! ^You purchased %item.name% from the TV Shopping Network. ^Thank you for shopping with us!^  - The TV Shopping Network"
-            })
-            out.metadata["mail_keys"] = ["tv_shopping_broadcast", "tv_shopping_delivery"]
-            out.metadata["broadcast_key"] = "tv_shopping_broadcast"
-            out.metadata["purchase_key"] = "tv_shopping_delivery"
-            out.metadata["catalogue_key"] = None
+        # All retries exhausted — write hardcoded fallback so the rest of the
+        # pipeline can still produce a zip. The failure is already visible via
+        # state.generators_failed and the API response (P4.5 iter 3).
+        out.add_file("mail/tv_shopping_broadcast.json", {
+            "tv_shopping_broadcast": "Dear @, ^Welcome to the TV Shopping Network! Your exclusive shopping channel is now available. ^Watch it on TV to see this week's special offers!^  - The TV Shopping Network"
+        })
+        out.add_file("mail/tv_shopping_delivery.json", {
+            "tv_shopping_delivery": "Dear @, ^Your order has arrived! ^You purchased %item.name% from the TV Shopping Network. ^Thank you for shopping with us!^  - The TV Shopping Network"
+        })
+        out.metadata["mail_keys"] = ["tv_shopping_broadcast", "tv_shopping_delivery"]
+        out.metadata["broadcast_key"] = "tv_shopping_broadcast"
+        out.metadata["purchase_key"] = "tv_shopping_delivery"
+        out.metadata["catalogue_key"] = None
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:

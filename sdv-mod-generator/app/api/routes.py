@@ -125,6 +125,11 @@ async def get_mod_status(request_id: str) -> ModStatusResponse:
             generators_succeeded=redis_state.get("generators_succeeded", []),
             t2_feedback=redis_state.get("t2_feedback"),
             t2_score=redis_state.get("t2_score"),
+            t2_max_score=redis_state.get("t2_max_score"),
+            t2_pass_threshold=redis_state.get("t2_pass_threshold"),
+            t2_passed=redis_state.get("t2_passed"),
+            t2_available=redis_state.get("t2_available"),
+            t2_panel_passed_count=redis_state.get("t2_panel_passed_count"),
             created_at=redis_state.get("created_at", datetime.now(timezone.utc).isoformat()),
         )
 
