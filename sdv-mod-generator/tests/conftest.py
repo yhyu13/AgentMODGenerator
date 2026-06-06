@@ -7,6 +7,25 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+# Tests assume a deterministic environment: no LLM provider configured
+# (so the T2 gate falls through to "no LLM" instead of trying to call
+# out), no live SOCKS proxy (avoids httpx 'socksio not installed' errors
+# on hosts where ALL_PROXY is set), no real Discord token, and prod
+# secrets check disabled. Importing app.config would call load_dotenv
+# and pull all of this in from config/.env, so we clear it before any
+# test module is collected.
+@pytest.fixture(autouse=True)
+def _isolate_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "DISCORD_BOT_TOKEN",
+        "ALL_PROXY",
+        "all_proxy",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def shop_channel_prompt() -> str:
     return "make a TV shopping channel that sells seeds on Sundays"
