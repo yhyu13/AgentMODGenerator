@@ -106,6 +106,34 @@ def validate_config():
     assert state.zip_output_timeout < 300, "timeout too high"
 ```
 
+### Test Isolation (Conventions)
+
+`tests/conftest.py` has an autouse fixture that unsets `OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, `DISCORD_BOT_TOKEN`, `ALL_PROXY`, and `all_proxy`
+before any test runs. The reason: `app.config` calls `load_dotenv` at
+import time, so a test file that does `from app.main import app`
+transitively pulls everything in `config/.env` into the test process.
+On a host that has a real `.env` with LLM keys set, that flipped 4
+pre-existing tests from passing to failing (they assumed "no LLM" —
+the loaded `.env` contradicted that). P5 surfaced this; the
+conftest.py fixture is the fix.
+
+**Convention for new test files:**
+
+- Don't import `app.config` (or anything that transitively imports it)
+  at module top-level unless the test is specifically exercising
+  config behavior. If you must import `app.main`, scope the import
+  inside the test function.
+- Tests that need a configured LLM (or any other env var) set it
+  explicitly via `monkeypatch.setenv` per-test.
+- Tests that need the dev `.env` loaded should call
+  `app.config._dotenv_path` explicitly — don't rely on import side
+  effects.
+
+If you add a new env var that production code reads, add it to the
+`_isolate_test_env` fixture in conftest.py so existing tests stay
+deterministic.
+
 ---
 
 ## Project Layout
