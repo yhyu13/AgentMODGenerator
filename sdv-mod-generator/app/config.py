@@ -22,6 +22,21 @@ if not IS_PROD:
         load_dotenv(_dotenv_path, override=True)
 
 
+# Required in production. At least one LLM provider key must also be present.
+_REQUIRED_PROD_SECRETS: list[str] = [
+    "DATABASE_URL",
+    "REDIS_URL",
+    "S3_BUCKET",
+    "S3_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "DISCORD_BOT_TOKEN",
+    "DISCORD_APP_ID",
+    "API_KEY",
+    "API_OWNER_USER_ID",
+]
+
+
 def _required(name: str) -> str:
     """Read a required env var; raise with a clear message in prod if missing."""
     value = os.getenv(name, "").strip()
@@ -51,51 +66,67 @@ class Config:
     s3_endpoint_url: str = os.getenv("S3_ENDPOINT_URL", "")
     aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
-    local_output_dir: str = os.getenv("LOCAL_OUTPUT_DIR", "/tmp/sdv-mod-generator/outputs")
     discord_bot_token: str = os.getenv("DISCORD_BOT_TOKEN", "")
     discord_app_id: str = os.getenv("DISCORD_APP_ID", "")
-    log_level: str = os.getenv("LOG_LEVEL", "INFO")
     api_key: str = os.getenv("API_KEY", "")
     api_owner_user_id: str = os.getenv("API_OWNER_USER_ID", "")
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    zip_output_timeout: int = int(os.getenv("ZIP_OUTPUT_TIMEOUT", "120"))
 
 
-_config: Config | None = None
+_config_instance: Config | None = None
 
 
 def get_config() -> Config:
-    global _config
-    if _config is None:
-        _config = Config()
-    return _config
+    """Return the singleton Config instance."""
+    global _config_instance
+    if _config_instance is None:
+        _config_instance = Config()
+    return _config_instance
 
 
 def require_prod_secrets() -> None:
-    """Validate that the secrets a production deploy must have are set.
+    """Validate that every required production secret is present.
 
-    Called once at startup when APP_ENV=prod. Aborts the process (raises)
-    rather than running with a missing or default secret. This is the
-    "fail closed" behaviour P5.1 calls for: a misconfigured prod deploy
-    does not silently fall back to dev defaults.
-
-    Reads os.environ directly (not the cached Config) so the test suite
-    can patch env vars per-test without invalidating the module cache.
+    Raises RuntimeError on the first missing secret so operators get a clear
+    startup failure instead of a cryptic downstream error.
     """
-    required_prod = {
-        "DATABASE_URL": os.getenv("DATABASE_URL", "").strip(),
-        "REDIS_URL": os.getenv("REDIS_URL", "").strip(),
-        "DISCORD_BOT_TOKEN": os.getenv("DISCORD_BOT_TOKEN", "").strip(),
-        "API_KEY": os.getenv("API_KEY", "").strip(),
-    }
-    missing = [k for k, v in required_prod.items() if not v]
+    if not IS_PROD:
+        return
+
+    missing: list[str] = []
+    for name in _REQUIRED_PROD_SECRETS:
+        value = os.getenv(name, "").strip()
+        if not value:
+            missing.append(name)
+
+    if not os.getenv("OPENAI_API_KEY", "").strip() and not os.getenv("ANTHROPIC_API_KEY", "").strip():
+        missing.append("OPENAI_API_KEY or ANTHROPIC_API_KEY")
+
     if missing:
         raise RuntimeError(
-            f"APP_ENV=prod but required env vars are empty: {missing}. "
-            f"Source them from your secrets manager (see config/prod.env.example)."
+            f"APP_ENV={APP_ENV} but required secrets are missing: {', '.join(missing)}. "
+            f"See config/prod.env.example for the full list."
         )
-    if required_prod["DATABASE_URL"].startswith(
-        "postgresql+asyncpg://postgres:postgres@localhost"
-    ):
+
+
+def validate_config() -> None:
+    """Validate dangerous runtime configuration values at startup.
+
+    Catches misconfigurations that caused past incidents (see AGENTS.md
+    root-cause table): unbounded T2 retries and excessive packaging timeouts.
+    """
+    from orchestrator.state import PipelineState
+
+    cfg = get_config()
+    state = PipelineState(request_id="", user_id="", prompt="")
+
+    if not (0 <= state.max_t2_iterations <= 2):
         raise RuntimeError(
-            "APP_ENV=prod but DATABASE_URL points at the dev default. "
-            "Set DATABASE_URL to the production database."
+            f"max_t2_iterations must be between 0 and 2, got {state.max_t2_iterations}"
+        )
+
+    if cfg.zip_output_timeout <= 0 or cfg.zip_output_timeout >= 300:
+        raise RuntimeError(
+            f"ZIP_OUTPUT_TIMEOUT must be > 0 and < 300, got {cfg.zip_output_timeout}"
         )

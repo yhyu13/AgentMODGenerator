@@ -32,6 +32,14 @@ async def lifespan(app: FastAPI):
             raise
 
     try:
+        from app.config import validate_config
+
+        validate_config()
+    except RuntimeError as exc:
+        logger.error("startup.config.validation_failed", error=str(exc))
+        raise RuntimeError("Configuration validation failed - cannot start") from exc
+
+    try:
         from storage.postgres import init_db
         await init_db()
     except Exception as exc:

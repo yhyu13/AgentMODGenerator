@@ -26,7 +26,7 @@ class PipelineState:
     t2_score: int = 0
     t2_feedback: str = ""
     t2_iterations: int = 0
-    max_t2_iterations: int = 1
+    max_t2_iterations: int = 0
     t2_judge_results: list = field(default_factory=list)
     t2_panel_passed_count: int = 0  # number of judges with score >= threshold
     status: Literal[

@@ -198,17 +198,20 @@ async def node_package(state: PipelineState) -> PipelineState:
         all_files.update(output.files)
         all_assets.extend(output.assets)
 
+    from app.config import get_config
+
+    timeout = get_config().zip_output_timeout
     try:
         zip_key = await asyncio.wait_for(
             asyncio.to_thread(packager_func, state.request_id, all_files, all_assets),
-            timeout=300,
+            timeout=timeout,
         )
         state.zip_key = zip_key
         state.status = "done"
         logger.info("pipeline.done", request_id=state.request_id, zip_key=zip_key)
     except asyncio.TimeoutError:
-        logger.error("pipeline.packaging_timeout", request_id=state.request_id)
-        state.errors.append("packaging timed out after 300 seconds")
+        logger.error("pipeline.packaging_timeout", request_id=state.request_id, timeout=timeout)
+        state.errors.append(f"packaging timed out after {timeout} seconds")
         state.status = "failed"
     except Exception as exc:
         logger.error("pipeline.packaging_failed", request_id=state.request_id, error=str(exc))
