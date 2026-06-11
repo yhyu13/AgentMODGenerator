@@ -14,11 +14,12 @@ class GenerateRequest(BaseModel):
 class GenerateResponse(BaseModel):
     request_id: str
     status: Literal["pending", "running", "done", "failed"]
+    estimated_seconds: int | None = Field(default=None, description="Estimated time to completion in seconds")
 
 
 class ModStatusResponse(BaseModel):
     request_id: str
-    status: Literal["pending", "done", "failed"]
+    status: Literal["pending", "running", "done", "failed"]
     zip_url: str | None = None
     files_preview: list[str] = Field(default_factory=list)
     t1_errors: list[str] = Field(default_factory=list)
@@ -31,6 +32,8 @@ class ModStatusResponse(BaseModel):
     t2_passed: bool | None = None
     t2_available: bool | None = None
     t2_panel_passed_count: int | None = None
+    progress_percent: int | None = Field(default=None, ge=0, le=100, description="Pipeline progress percentage")
+    current_stage: str | None = Field(default=None, description="Current pipeline stage")
     created_at: datetime
 
 

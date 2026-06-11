@@ -58,6 +58,8 @@ _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
         "npc routine": "npc_schedule",
         "npc event": "event_mod",
         "npc dialogue": "npc_schedule",
+        "new npc": "npc_schedule",
+        "daily schedule": "npc_schedule",
         "crafting": "custom_crafting",
         "recipe": "custom_crafting",
         "cooking": "custom_crafting",
@@ -137,6 +139,14 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
 def _default_generators_for_phase(phase: str) -> list[str]:
     if phase == "texture":
         return ["texture_generator"]
+    if phase == "npc_schedule":
+        return [
+            "manifest_generator",
+            "npc_schedule_generator",
+            "npc_dialogue_generator",
+            "npc_gift_taste_generator",
+            "npc_content_json_generator",
+        ]
     if phase == "shop_channel":
         return [
             "manifest_generator", "shop_item_pool_generator", "tv_channel_generator",

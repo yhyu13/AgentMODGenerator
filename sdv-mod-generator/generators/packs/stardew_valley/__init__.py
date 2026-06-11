@@ -24,6 +24,12 @@ from generators.packs.stardew_valley.features.shop_channel import (
     ConfigSchemaGenerator,
     ContentJsonGenerator,
 )
+from generators.packs.stardew_valley.features.npc_schedule import (
+    NPCScheduleGenerator,
+    NPCDialogueGenerator,
+    NPCGiftTasteGenerator,
+    NPCContentJsonGenerator,
+)
 from generators.packs.stardew_valley.features.texture import TextureGenerator
 
 _PKGDIR = Path(__file__).parent
@@ -31,7 +37,7 @@ _MANIFEST = GameManifest(
     game_id="stardew_valley",
     display_name="Stardew Valley",
     mod_format="ContentPatcher",
-    supported_phases=["shop_channel", "texture"],
+    supported_phases=["shop_channel", "texture", "npc_schedule"],
     knowledge_dir=_PKGDIR / "knowledge",
 )
 
@@ -85,6 +91,24 @@ class StardewValleyPack(GamePack):
                 phase=phase,
                 generators=[TextureGenerator],
                 execution_order=["texture_generator"],
+            )
+        if phase == "npc_schedule":
+            return PhaseGenerators(
+                phase=phase,
+                generators=[
+                    ManifestGenerator,
+                    NPCScheduleGenerator,
+                    NPCDialogueGenerator,
+                    NPCGiftTasteGenerator,
+                    NPCContentJsonGenerator,
+                ],
+                execution_order=[
+                    "manifest_generator",
+                    "npc_schedule_generator",
+                    "npc_dialogue_generator",
+                    "npc_gift_taste_generator",
+                    "npc_content_json_generator",
+                ],
             )
         raise ValueError(f"Unknown phase for stardew_valley: {phase}")
 

@@ -152,7 +152,7 @@ async def start_bot() -> None:
     )
     @app_commands.describe(request_id="The request ID to check")
     async def status_command(interaction: discord.Interaction, request_id: str) -> None:
-        from storage.redis import get_status as redis_get_status
+        from storage.redis import get_status as redis_get_status, get_pipeline_state
 
         await interaction.response.defer(ephemeral=True)
 
@@ -164,8 +164,19 @@ async def start_bot() -> None:
             )
             return
 
+        # Try to get richer status with progress
+        progress_text = ""
+        try:
+            state = await get_pipeline_state(request_id)
+            if state:
+                from app.api.routes import _compute_progress
+                progress = _compute_progress(state)
+                progress_text = f" ({progress['percent']}% - {progress['stage']})"
+        except Exception:
+            pass
+
         await interaction.followup.send(
-            f"Request `{request_id}`: **{current_status}**",
+            f"Request `{request_id}`: **{current_status}**{progress_text}",
             ephemeral=True,
         )
 

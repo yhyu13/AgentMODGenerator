@@ -58,7 +58,15 @@ async def generate_mod(req: GenerateRequest) -> GenerateResponse:
     await redis_set_status(request_id, "running")
     run_pipeline_background(request_id, req.user_id, req.prompt)
 
-    return GenerateResponse(request_id=request_id, status="running")
+    # Rough estimate: shop_channel ~90s, texture ~30s, npc_schedule ~60s
+    estimated = 90
+    prompt_lower = req.prompt.lower()
+    if any(k in prompt_lower for k in ("texture", "sprite", "image")):
+        estimated = 30
+    elif any(k in prompt_lower for k in ("npc", "schedule", "dialogue")):
+        estimated = 60
+
+    return GenerateResponse(request_id=request_id, status="running", estimated_seconds=estimated)
 
 
 @router.get("/mods/status/{request_id}")
@@ -115,6 +123,8 @@ async def get_mod_status(request_id: str) -> ModStatusResponse:
     redis_state = await get_pipeline_state(request_id)
     if redis_state:
         logger.info("api.status.cache_hit", request_id=request_id)
+        # Compute progress from pipeline state
+        progress = _compute_progress(redis_state)
         return ModStatusResponse(
             request_id=request_id,
             status=redis_state.get("status", "pending"),
@@ -130,6 +140,8 @@ async def get_mod_status(request_id: str) -> ModStatusResponse:
             t2_passed=redis_state.get("t2_passed"),
             t2_available=redis_state.get("t2_available"),
             t2_panel_passed_count=redis_state.get("t2_panel_passed_count"),
+            progress_percent=progress["percent"],
+            current_stage=progress["stage"],
             created_at=redis_state.get("created_at", datetime.now(timezone.utc).isoformat()),
         )
 
@@ -150,6 +162,8 @@ async def get_mod_status(request_id: str) -> ModStatusResponse:
         t1_errors=output.get("t1_errors", []),
         t2_feedback=output.get("t2_feedback"),
         t2_score=output.get("t2_score"),
+        progress_percent=None,
+        current_stage=None,
         created_at=(
             output["created_at"].isoformat()
             if isinstance(output["created_at"], datetime)
@@ -216,3 +230,29 @@ async def get_history(
             for e in entries
         ],
     )
+
+
+def _compute_progress(redis_state: dict) -> dict[str, int | str | None]:
+    """Compute pipeline progress percentage and current stage from Redis state."""
+    status = redis_state.get("status", "pending")
+    stage_map: dict[str, tuple[str, int]] = {
+        "pending": ("pending", 0),
+        "routing": ("routing", 5),
+        "generating": ("generating", 20),
+        "t1_gating": ("validating", 60),
+        "t2_gating": ("reviewing", 75),
+        "packaging": ("packaging", 90),
+        "done": ("completed", 100),
+        "failed": ("failed", 100),
+    }
+    stage, percent = stage_map.get(status, ("unknown", 0))
+
+    # Refine generating progress based on generator completion
+    if status == "generating":
+        succeeded = redis_state.get("generators_succeeded", [])
+        failed = redis_state.get("generators_failed", [])
+        total = len(succeeded) + len(failed) + 1  # +1 for current
+        if total > 1:
+            percent = 20 + int((len(succeeded) + len(failed)) / total * 35)
+
+    return {"stage": stage, "percent": percent}

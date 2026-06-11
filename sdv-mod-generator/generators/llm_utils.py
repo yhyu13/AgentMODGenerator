@@ -92,8 +92,10 @@ async def generate_structured(
     output_schema: type,
     system: str | None = None,
     max_tokens: int = 2048,
+    max_retries: int = 2,
+    base_delay: float = 1.0,
 ) -> dict[str, Any]:
-    """Generate structured JSON output via LLM.
+    """Generate structured JSON output via LLM with exponential backoff retry.
 
     Uses OpenAI if ANTHROPIC_API_KEY is not set, otherwise Anthropic.
     Uses native structured output when available; schema is NOT added
@@ -101,6 +103,9 @@ async def generate_structured(
 
     If validation fails because the LLM wrapped output in a schema-name key,
     automatically unwraps and retries validation once.
+
+    Retries on transient errors (RuntimeError, IOError) with exponential
+    backoff to improve pipeline robustness against temporary LLM failures.
     """
     global _client
     if _client is None:
@@ -111,34 +116,55 @@ async def generate_structured(
     client = _client
 
     schema_name = output_schema.__name__
+    last_exception: Exception | None = None
 
-    try:
-        result = await client.complete_with_structured_output(
-            prompt,
-            output_schema,
-            system=system,
-            max_tokens=max_tokens,
-        )
-        # Validate; if it fails due to schema-name wrapper, unwrap and retry
+    for attempt in range(max_retries + 1):
         try:
-            output_schema(**result)
-        except ValidationError:
-            unwrapped = _unwrap_schema_wrapper(result, schema_name)
+            result = await client.complete_with_structured_output(
+                prompt,
+                output_schema,
+                system=system,
+                max_tokens=max_tokens,
+            )
+            # Validate; if it fails due to schema-name wrapper, unwrap and retry
             try:
-                output_schema(**unwrapped)
-                result = unwrapped
+                output_schema(**result)
             except ValidationError:
+                unwrapped = _unwrap_schema_wrapper(result, schema_name)
+                try:
+                    output_schema(**unwrapped)
+                    result = unwrapped
+                except ValidationError:
+                    logger.warning(
+                        "llm_utils.generate.unwrapped_validation_failed",
+                        schema=schema_name,
+                        original=result,
+                        unwrapped=unwrapped,
+                    )
+                    raise
+            return result
+        except (RuntimeError, IOError) as exc:
+            last_exception = exc
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
                 logger.warning(
-                    "llm_utils.generate.unwrapped_validation_failed",
-                    schema=schema_name,
-                    original=result,
-                    unwrapped=unwrapped,
+                    "llm_utils.generate.retry",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    delay=delay,
+                    error=str(exc),
                 )
+                await asyncio.sleep(delay)
+            else:
+                logger.error("llm_utils.generate.error", error=str(exc))
                 raise
-        return result
-    except Exception as exc:
-        logger.error("llm_utils.generate.error", error=str(exc))
-        raise
+        except Exception as exc:
+            logger.error("llm_utils.generate.error", error=str(exc))
+            raise
+
+    if last_exception:
+        raise last_exception
+    raise RuntimeError("generate_structured: unexpected exit from retry loop")
 
 
 def generate_text(
