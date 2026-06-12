@@ -9,14 +9,17 @@ import openai
 
 
 class RateLimitError(Exception):
+    """Raised when an LLM provider returns a rate-limit response."""
     pass
 
 
 class AuthError(Exception):
+    """Raised when an LLM provider rejects the API key."""
     pass
 
 
 class LLMError(Exception):
+    """Raised for any other LLM client failure (network, parse, etc.)."""
     pass
 
 
@@ -30,6 +33,7 @@ class CompletionClient(Protocol):
 
 
 def _build_schema_dict(output_schema: type) -> dict[str, Any]:
+    """Build an OpenAI-compatible JSON schema dict from a Pydantic model class."""
     schema_name = output_schema.__name__
     schema_dict: dict[str, Any] = {"name": schema_name}
     if hasattr(output_schema, "model_json_schema"):
@@ -40,11 +44,10 @@ def _build_schema_dict(output_schema: type) -> dict[str, Any]:
 
 
 def _strip_code_fence(content: str) -> str:
+    """Strip markdown code fences and <think> blocks from LLM responses."""
     import re
-    # Remove thinking blocks: <think>...(multi-line)...</think>
     content = content.strip()
     # Remove thinking tags that some models output (e.g., MiniMax deep thinking)
-    import re
     content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
     if content.startswith("```"):
         parts = content.split("```", 2)
@@ -207,6 +210,10 @@ Respond with valid JSON matching this schema:
 
 
 def get_client() -> CompletionClient:
+    """Return the first available LLM client (Anthropic preferred, then OpenAI).
+
+    Raises RuntimeError if neither API key is configured.
+    """
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     if anthropic_key:

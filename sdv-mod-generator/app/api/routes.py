@@ -11,6 +11,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from app.api.schemas import (
     GenerateRequest,
     GenerateResponse,
+    BatchGenerateRequest,
+    BatchGenerateResponse,
+    BatchGenerateItem,
     ModStatusResponse,
     FilePreviewResponse,
     HistoryResponse,
@@ -39,6 +42,18 @@ async def verify_api_key(x_api_key: Annotated[str | None, Header()] = None) -> b
     return True
 
 
+def _estimate_seconds(prompt: str) -> int:
+    """Estimate generation time based on prompt keywords."""
+    prompt_lower = prompt.lower()
+    if any(k in prompt_lower for k in ("texture", "sprite", "image")):
+        return 30
+    if any(k in prompt_lower for k in ("npc", "schedule", "dialogue")):
+        return 60
+    if any(k in prompt_lower for k in ("farm expansion", "building", "warp", "map edit")):
+        return 75
+    return 90
+
+
 @router.post("/mods/generate", response_model=GenerateResponse)
 async def generate_mod(req: GenerateRequest) -> GenerateResponse:
     """Start mod generation pipeline (non-blocking). Use /status/{id} to poll."""
@@ -58,15 +73,41 @@ async def generate_mod(req: GenerateRequest) -> GenerateResponse:
     await redis_set_status(request_id, "running")
     run_pipeline_background(request_id, req.user_id, req.prompt)
 
-    # Rough estimate: shop_channel ~90s, texture ~30s, npc_schedule ~60s
-    estimated = 90
-    prompt_lower = req.prompt.lower()
-    if any(k in prompt_lower for k in ("texture", "sprite", "image")):
-        estimated = 30
-    elif any(k in prompt_lower for k in ("npc", "schedule", "dialogue")):
-        estimated = 60
-
+    estimated = _estimate_seconds(req.prompt)
     return GenerateResponse(request_id=request_id, status="running", estimated_seconds=estimated)
+
+
+@router.post("/mods/generate/batch", response_model=BatchGenerateResponse)
+async def generate_mod_batch(req: BatchGenerateRequest) -> BatchGenerateResponse:
+    """Start multiple mod generation pipelines in parallel."""
+    from orchestrator.pipeline import run_pipeline_background
+    from storage.redis import set_status as redis_set_status
+    from storage.queries import create_mod_request
+
+    batch_id = f"batch_{uuid.uuid4().hex[:12]}"
+    items: list[BatchGenerateItem] = []
+
+    for prompt in req.prompts:
+        request_id = f"req_{uuid.uuid4().hex[:12]}"
+        logger.info(
+            "api.generate_batch.start",
+            batch_id=batch_id,
+            request_id=request_id,
+            user_id=req.user_id,
+            prompt=prompt,
+        )
+        await create_mod_request(request_id, req.user_id, prompt, "batch", [], {})
+        await redis_set_status(request_id, "running")
+        run_pipeline_background(request_id, req.user_id, prompt)
+        items.append(BatchGenerateItem(
+            prompt=prompt,
+            request_id=request_id,
+            status="running",
+            estimated_seconds=_estimate_seconds(prompt),
+        ))
+
+    logger.info("api.generate_batch.done", batch_id=batch_id, item_count=len(items))
+    return BatchGenerateResponse(batch_id=batch_id, items=items)
 
 
 @router.get("/mods/status/{request_id}")
@@ -81,6 +122,30 @@ async def get_mod_status_check(request_id: str) -> dict:
             detail=f"Status not found for {request_id}",
         )
     return {"request_id": request_id, "status": current_status}
+
+
+@router.post("/mods/cancel/{request_id}")
+async def cancel_mod(request_id: str) -> dict:
+    """Cancel a running mod generation request."""
+    from storage.redis import set_status as redis_set_status, get_pipeline_state
+
+    state = await get_pipeline_state(request_id)
+    if not state:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Request {request_id} not found",
+        )
+
+    current_status = state.get("status", "unknown")
+    if current_status in ("done", "failed"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot cancel request with status: {current_status}",
+        )
+
+    await redis_set_status(request_id, "cancelled")
+    logger.info("api.cancel.done", request_id=request_id, previous_status=current_status)
+    return {"request_id": request_id, "status": "cancelled", "previous_status": current_status}
 
 
 @router.get("/mods/download/{request_id}")
@@ -244,6 +309,7 @@ def _compute_progress(redis_state: dict) -> dict[str, int | str | None]:
         "packaging": ("packaging", 90),
         "done": ("completed", 100),
         "failed": ("failed", 100),
+        "cancelled": ("cancelled", 100),
     }
     stage, percent = stage_map.get(status, ("unknown", 0))
 
@@ -251,8 +317,12 @@ def _compute_progress(redis_state: dict) -> dict[str, int | str | None]:
     if status == "generating":
         succeeded = redis_state.get("generators_succeeded", [])
         failed = redis_state.get("generators_failed", [])
-        total = len(succeeded) + len(failed) + 1  # +1 for current
-        if total > 1:
-            percent = 20 + int((len(succeeded) + len(failed)) / total * 35)
+        total_gens = len(succeeded) + len(failed)
+        generators = redis_state.get("generators", [])
+        total = len(generators) if generators else total_gens + 1
+        if total > 0:
+            percent = 20 + int(total_gens / total * 35)
+        else:
+            percent = 20
 
     return {"stage": stage, "percent": percent}

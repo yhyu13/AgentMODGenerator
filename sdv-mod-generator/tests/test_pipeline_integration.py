@@ -302,3 +302,13 @@ class TestFullPipeline:
         assert result.zip_key is not None
         assert "texture_generator" in result.outputs
         assert result.t1_passed is True
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline_custom_crafting(self):
+        result = await run_pipeline("req_crafting_test", "test_user", "add custom crafting recipes")
+        assert result.status == "done"
+        assert result.zip_key is not None
+        assert "crafting_recipe_generator" in result.outputs
+        assert "cooking_recipe_generator" in result.outputs
+        assert "crafting_content_json_generator" in result.outputs
+        assert result.t1_passed is True

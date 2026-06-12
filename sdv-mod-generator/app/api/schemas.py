@@ -11,6 +11,24 @@ class GenerateRequest(BaseModel):
     phase: str | None = None
 
 
+class BatchGenerateRequest(BaseModel):
+    user_id: str
+    prompts: list[str] = Field(min_length=1, max_length=10)
+    phase: str | None = None
+
+
+class BatchGenerateItem(BaseModel):
+    prompt: str
+    request_id: str
+    status: Literal["pending", "running", "done", "failed"]
+    estimated_seconds: int | None = None
+
+
+class BatchGenerateResponse(BaseModel):
+    batch_id: str
+    items: list[BatchGenerateItem]
+
+
 class GenerateResponse(BaseModel):
     request_id: str
     status: Literal["pending", "running", "done", "failed"]
@@ -19,7 +37,7 @@ class GenerateResponse(BaseModel):
 
 class ModStatusResponse(BaseModel):
     request_id: str
-    status: Literal["pending", "running", "done", "failed"]
+    status: Literal["pending", "running", "done", "failed", "cancelled"]
     zip_url: str | None = None
     files_preview: list[str] = Field(default_factory=list)
     t1_errors: list[str] = Field(default_factory=list)

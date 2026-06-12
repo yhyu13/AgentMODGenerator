@@ -1,9 +1,17 @@
-"""End-to-end test mimicking Discord /generate command flow."""
+"""End-to-end test mimicking Discord /generate command flow.
+
+This is an integration test that requires a running API server.
+Run manually with: python tests/test_discord_flow.py
+"""
 import asyncio
 import aiohttp
 import sys
 import zipfile
 from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Integration test: requires running API server")
 
 API_BASE = "http://localhost:8000"
 PROMPT = "做一个电视购物频道"

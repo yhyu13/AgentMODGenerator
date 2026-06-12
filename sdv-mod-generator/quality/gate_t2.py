@@ -190,6 +190,7 @@ FEEDBACK: <2-4 sentence explanation of the main issues and strengths>
 
 
 def _build_mod_summary(outputs: dict[str, GeneratorOutput]) -> str:
+    """Build a concise text summary of all generator outputs for the T2 judge panel."""
     parts: list[str] = []
     for gen_name, output in outputs.items():
         files = list(output.files.keys())
@@ -201,9 +202,12 @@ def _build_mod_summary(outputs: dict[str, GeneratorOutput]) -> str:
                 if len(sanitized) > 200:
                     try:
                         import json
-                        truncated = json.loads(sanitized)
-                        truncated = {k: (v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v) for k, v in truncated.items()}
-                        sanitized = json.dumps(truncated)
+                        truncated_dict = json.loads(sanitized)
+                        truncated_dict = {
+                            k: (v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v)
+                            for k, v in truncated_dict.items()
+                        }
+                        sanitized = json.dumps(truncated_dict)
                     except Exception:
                         sanitized = sanitized[:197] + "..."
                 parts.append(f"  {path}: {sanitized}")

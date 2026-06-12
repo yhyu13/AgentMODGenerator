@@ -15,12 +15,22 @@ _client_lock = asyncio.Lock()
 
 
 async def get_client() -> redis.Redis:
+    """Return the singleton async Redis client, creating it if needed.
+
+    Raises ConnectionError if the Redis URL is malformed or unreachable.
+    """
     global _client
     if _client is None:
         async with _client_lock:
             if _client is None:
-                _client = redis.from_url(_REDIS_URL, decode_responses=True)
-                logger.info("storage.redis.connected", url=_REDIS_URL)
+                try:
+                    new_client = redis.from_url(_REDIS_URL, decode_responses=True)
+                    await new_client.ping()
+                    _client = new_client
+                    logger.info("storage.redis.connected", url=_REDIS_URL)
+                except Exception as exc:
+                    logger.error("storage.redis.connection_failed", url=_REDIS_URL, error=str(exc))
+                    raise ConnectionError(f"Failed to connect to Redis at {_REDIS_URL}: {exc}") from exc
     return _client
 
 
@@ -40,8 +50,17 @@ async def get_pipeline_state(request_id: str) -> dict | None:
     if data is None:
         logger.info("storage.redis.get_pipeline_state", request_id=request_id, hit=False)
         return None
+    try:
+        parsed = json.loads(data)
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "storage.redis.get_pipeline_state.json_error",
+            request_id=request_id,
+            error=str(exc),
+        )
+        return None
     logger.info("storage.redis.get_pipeline_state", request_id=request_id, hit=True)
-    return json.loads(data)
+    return parsed
 
 
 async def set_status(request_id: str, status: str, ttl: int = 3600) -> None:

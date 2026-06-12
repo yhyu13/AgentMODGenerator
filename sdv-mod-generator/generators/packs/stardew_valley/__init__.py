@@ -31,13 +31,32 @@ from generators.packs.stardew_valley.features.npc_schedule import (
     NPCContentJsonGenerator,
 )
 from generators.packs.stardew_valley.features.texture import TextureGenerator
+from generators.packs.stardew_valley.features.event_mod import (
+    FestivalScheduleGenerator,
+    FestivalShopGenerator,
+    FestivalMapGenerator,
+    FestivalDialogueGenerator,
+    FestivalMailGenerator,
+    FestivalContentJsonGenerator,
+)
+from generators.packs.stardew_valley.features.custom_crafting import (
+    CraftingRecipeGenerator,
+    CookingRecipeGenerator,
+    CraftingContentJsonGenerator,
+)
+from generators.packs.stardew_valley.features.farm_expansion import (
+    BuildingGenerator,
+    WarpPointGenerator,
+    MapEditGenerator,
+    FarmExpansionContentJsonGenerator,
+)
 
 _PKGDIR = Path(__file__).parent
 _MANIFEST = GameManifest(
     game_id="stardew_valley",
     display_name="Stardew Valley",
     mod_format="ContentPatcher",
-    supported_phases=["shop_channel", "texture", "npc_schedule"],
+    supported_phases=["shop_channel", "texture", "npc_schedule", "event_mod", "custom_crafting", "farm_expansion"],
     knowledge_dir=_PKGDIR / "knowledge",
 )
 
@@ -108,6 +127,61 @@ class StardewValleyPack(GamePack):
                     "npc_dialogue_generator",
                     "npc_gift_taste_generator",
                     "npc_content_json_generator",
+                ],
+            )
+        if phase == "event_mod":
+            gens = [
+                FestivalScheduleGenerator,
+                FestivalShopGenerator,
+                FestivalMapGenerator,
+                FestivalDialogueGenerator,
+                FestivalMailGenerator,
+                FestivalContentJsonGenerator,
+            ]
+            return PhaseGenerators(
+                phase=phase,
+                generators=gens,
+                execution_order=[
+                    "festival_schedule_generator",
+                    "festival_shop_generator",
+                    "festival_map_generator",
+                    "festival_dialogue_generator",
+                    "festival_mail_generator",
+                    "festival_content_json_generator",
+                ],
+            )
+        if phase == "custom_crafting":
+            gens = [
+                CraftingRecipeGenerator,
+                CookingRecipeGenerator,
+                CraftingContentJsonGenerator,
+            ]
+            return PhaseGenerators(
+                phase=phase,
+                generators=gens,
+                execution_order=[
+                    "crafting_recipe_generator",
+                    "cooking_recipe_generator",
+                    "crafting_content_json_generator",
+                ],
+            )
+        if phase == "farm_expansion":
+            gens = [
+                ManifestGenerator,
+                BuildingGenerator,
+                WarpPointGenerator,
+                MapEditGenerator,
+                FarmExpansionContentJsonGenerator,
+            ]
+            return PhaseGenerators(
+                phase=phase,
+                generators=gens,
+                execution_order=[
+                    "manifest_generator",
+                    "building_generator",
+                    "warp_point_generator",
+                    "map_edit_generator",
+                    "farm_expansion_content_json_generator",
                 ],
             )
         raise ValueError(f"Unknown phase for stardew_valley: {phase}")

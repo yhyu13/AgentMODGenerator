@@ -180,6 +180,96 @@ async def start_bot() -> None:
             ephemeral=True,
         )
 
+    @_bot.tree.command(
+        name="cancel",
+        description="Cancel a running generation request",
+    )
+    @app_commands.describe(request_id="The request ID to cancel")
+    async def cancel_command(interaction: discord.Interaction, request_id: str) -> None:
+        from storage.redis import get_pipeline_state
+
+        await interaction.response.defer(ephemeral=True)
+
+        state = await get_pipeline_state(request_id)
+        if not state:
+            await interaction.followup.send(
+                f"Request `{request_id}` not found.",
+                ephemeral=True,
+            )
+            return
+
+        current_status = state.get("status", "unknown")
+        if current_status in ("done", "failed"):
+            await interaction.followup.send(
+                f"Cannot cancel request `{request_id}` — it is already **{current_status}**.",
+                ephemeral=True,
+            )
+            return
+
+        await redis_set_status(request_id, "cancelled")
+        logger.info(
+            "discord.cancel.done",
+            request_id=request_id,
+            user_id=str(interaction.user.id),
+            previous_status=current_status,
+        )
+        await interaction.followup.send(
+            f"Cancelled request `{request_id}` (was **{current_status}**).",
+            ephemeral=True,
+        )
+
+    @_bot.tree.command(
+        name="history",
+        description="Show your recent mod generation history",
+    )
+    async def history_command(interaction: discord.Interaction) -> None:
+        """Show user's recent generation history with rich embeds."""
+        from storage.queries import get_user_history
+
+        await interaction.response.defer(ephemeral=True)
+
+        user_id = str(interaction.user.id)
+        try:
+            entries = await get_user_history(user_id)
+        except Exception as exc:
+            logger.error("discord.history.error", user_id=user_id, error=str(exc))
+            await interaction.followup.send(
+                "Failed to load history. Please try again later.",
+                ephemeral=True,
+            )
+            return
+
+        if not entries:
+            await interaction.followup.send(
+                "You haven't generated any mods yet. Use `/generate` to create one!",
+                ephemeral=True,
+            )
+            return
+
+        embed = discord.Embed(
+            title="Mod Generation History",
+            description=f"Recent requests for {interaction.user.display_name}",
+            color=discord.Color.blue(),
+        )
+        for entry in entries[:10]:
+            status_emoji = {
+                "done": "✅",
+                "failed": "❌",
+                "running": "⏳",
+                "pending": "⏳",
+                "cancelled": "🚫",
+            }.get(entry.get("status", "unknown"), "❓")
+            prompt_short = entry.get("prompt", "")[:60]
+            if len(entry.get("prompt", "")) > 60:
+                prompt_short += "..."
+            embed.add_field(
+                name=f"{status_emoji} `{entry['request_id']}`",
+                value=f"{prompt_short}\nStatus: **{entry.get('status', 'unknown')}**",
+                inline=False,
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @_bot.event
     async def on_ready() -> None:
         logger.info("discord.bot.ready", user=str(_bot.user), bot_id=_bot.user.id if _bot.user else None)

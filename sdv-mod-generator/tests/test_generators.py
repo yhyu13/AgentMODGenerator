@@ -12,6 +12,11 @@ from generators.packs.stardew_valley.features.shop_channel import (
     TriggerLogicGenerator,
 )
 from generators.packs.stardew_valley.features.texture import TextureGenerator
+from generators.packs.stardew_valley.features.custom_crafting import (
+    CraftingRecipeGenerator,
+    CookingRecipeGenerator,
+    CraftingContentJsonGenerator,
+)
 
 
 def make_input(prompt: str = "test prompt") -> GeneratorInput:
@@ -157,6 +162,81 @@ class TestTextureGenerator:
     async def test_texture_validate_passes(self):
         gen = TextureGenerator()
         out = await gen.generate(make_input())
+        errors = gen.validate_output(out)
+        assert errors == []
+
+
+class TestCraftingRecipeGenerator:
+    @pytest.mark.asyncio
+    async def test_crafting_recipe_fallback_no_llm(self):
+        gen = CraftingRecipeGenerator()
+        out = await gen.generate(make_input("add custom crafting recipes"))
+        assert "assets/data/crafting_recipes.json" in out.files
+        data = out.files["assets/data/crafting_recipes.json"]
+        assert "recipes" in data
+        assert len(data["recipes"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_crafting_recipe_validate_passes(self):
+        gen = CraftingRecipeGenerator()
+        out = await gen.generate(make_input())
+        errors = gen.validate_output(out)
+        assert errors == []
+
+
+class TestCookingRecipeGenerator:
+    @pytest.mark.asyncio
+    async def test_cooking_recipe_fallback_no_llm(self):
+        gen = CookingRecipeGenerator()
+        out = await gen.generate(make_input("add custom cooking recipes"))
+        assert "assets/data/cooking_recipes.json" in out.files
+        data = out.files["assets/data/cooking_recipes.json"]
+        assert "recipes" in data
+        assert len(data["recipes"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_cooking_recipe_validate_passes(self):
+        gen = CookingRecipeGenerator()
+        out = await gen.generate(make_input())
+        errors = gen.validate_output(out)
+        assert errors == []
+
+
+class TestCraftingContentJsonGenerator:
+    @pytest.mark.asyncio
+    async def test_content_json_with_prior_outputs(self):
+        gen = CraftingContentJsonGenerator()
+        inp = make_input("crafting mod")
+        prior = GeneratorOutput()
+        prior.add_file("assets/data/crafting_recipes.json", {
+            "recipes": [
+                {
+                    "RecipeName": "Test_Bench",
+                    "Ingredients": [{"ItemName": "Wood", "Quantity": 10}],
+                    "OutputItem": "Test Bench",
+                    "OutputQuantity": 1,
+                }
+            ]
+        })
+        inp["prior_outputs"] = {
+            "crafting_recipe_generator": prior,
+            "cooking_recipe_generator": GeneratorOutput(),
+        }
+        out = await gen.generate(inp)
+        assert "content.json" in out.files
+        content = out.files["content.json"]
+        assert content["Format"] == "1.29.0"
+        assert "Changes" in content
+
+    @pytest.mark.asyncio
+    async def test_content_json_validate_passes(self):
+        gen = CraftingContentJsonGenerator()
+        inp = make_input()
+        inp["prior_outputs"] = {
+            "crafting_recipe_generator": GeneratorOutput(),
+            "cooking_recipe_generator": GeneratorOutput(),
+        }
+        out = await gen.generate(inp)
         errors = gen.validate_output(out)
         assert errors == []
 

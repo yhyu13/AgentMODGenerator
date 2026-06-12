@@ -60,9 +60,18 @@ _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
         "npc dialogue": "npc_schedule",
         "new npc": "npc_schedule",
         "daily schedule": "npc_schedule",
+        "festival": "event_mod",
+        "event": "event_mod",
+        "celebration": "event_mod",
+        "fair": "event_mod",
         "crafting": "custom_crafting",
         "recipe": "custom_crafting",
         "cooking": "custom_crafting",
+        "farm expansion": "farm_expansion",
+        "building": "farm_expansion",
+        "warp": "farm_expansion",
+        "map edit": "farm_expansion",
+        "new area": "farm_expansion",
     },
 }
 
@@ -154,5 +163,28 @@ def _default_generators_for_phase(phase: str) -> list[str]:
             "catalog_preview_generator", "realism_damage_generator",
             "trigger_logic_generator", "config_schema_generator",
             "content_json_generator",
+        ]
+    if phase == "event_mod":
+        return [
+            "festival_schedule_generator",
+            "festival_shop_generator",
+            "festival_map_generator",
+            "festival_dialogue_generator",
+            "festival_mail_generator",
+            "festival_content_json_generator",
+        ]
+    if phase == "custom_crafting":
+        return [
+            "crafting_recipe_generator",
+            "cooking_recipe_generator",
+            "crafting_content_json_generator",
+        ]
+    if phase == "farm_expansion":
+        return [
+            "manifest_generator",
+            "building_generator",
+            "warp_point_generator",
+            "map_edit_generator",
+            "farm_expansion_content_json_generator",
         ]
     return []

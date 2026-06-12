@@ -50,6 +50,20 @@ def _required(name: str) -> str:
     return value
 
 
+def _safe_int(value: str | None, default: int) -> int:
+    """Parse an integer from a string, falling back to default on error.
+
+    Handles None, empty strings, non-numeric strings, and floats by
+    returning the default value rather than raising.
+    """
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 @dataclass
 class Config:
     app_env: str = APP_ENV
@@ -71,7 +85,7 @@ class Config:
     api_key: str = os.getenv("API_KEY", "")
     api_owner_user_id: str = os.getenv("API_OWNER_USER_ID", "")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
-    zip_output_timeout: int = int(os.getenv("ZIP_OUTPUT_TIMEOUT", "120"))
+    zip_output_timeout: int = _safe_int(os.getenv("ZIP_OUTPUT_TIMEOUT", "120"), 120)
 
 
 _config_instance: Config | None = None
@@ -121,12 +135,24 @@ def validate_config() -> None:
     cfg = get_config()
     state = PipelineState(request_id="", user_id="", prompt="")
 
-    if not (0 <= state.max_t2_iterations <= 2):
+    max_t2 = state.max_t2_iterations
+    if not (0 <= max_t2 <= 2):
         raise RuntimeError(
-            f"max_t2_iterations must be between 0 and 2, got {state.max_t2_iterations}"
+            f"max_t2_iterations must be between 0 and 2, got {max_t2}"
         )
 
     if cfg.zip_output_timeout <= 0 or cfg.zip_output_timeout >= 300:
         raise RuntimeError(
             f"ZIP_OUTPUT_TIMEOUT must be > 0 and < 300, got {cfg.zip_output_timeout}"
         )
+
+    _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    if cfg.log_level.upper() not in _VALID_LOG_LEVELS:
+        raise RuntimeError(
+            f"LOG_LEVEL must be one of {_VALID_LOG_LEVELS}, got {cfg.log_level}"
+        )
+
+    if cfg.openai_model and not isinstance(cfg.openai_model, str):
+        raise RuntimeError(f"OPENAI_MODEL must be a string, got {type(cfg.openai_model)}")
+    if cfg.anthropic_model and not isinstance(cfg.anthropic_model, str):
+        raise RuntimeError(f"ANTHROPIC_MODEL must be a string, got {type(cfg.anthropic_model)}")

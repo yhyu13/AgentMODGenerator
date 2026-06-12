@@ -43,9 +43,54 @@ class TestRoute:
         assert hint["game"] == "stardew_valley"
         assert "npc_schedule_generator" in hint["generators"]
 
+    def test_event_mod_routing(self):
+        phase, hint = route("create a festival event for stardew valley")
+        assert phase == "event_mod"
+        assert hint["game"] == "stardew_valley"
+        assert "festival_schedule_generator" in hint["generators"]
+        assert "festival_content_json_generator" in hint["generators"]
+
+    def test_custom_crafting_routing(self):
+        phase, hint = route("add custom crafting recipes to stardew valley")
+        assert phase == "custom_crafting"
+        assert hint["game"] == "stardew_valley"
+        assert "crafting_recipe_generator" in hint["generators"]
+        assert "cooking_recipe_generator" in hint["generators"]
+        assert "crafting_content_json_generator" in hint["generators"]
+
+    def test_cooking_keyword_routing(self):
+        phase, hint = route("new cooking recipes for stardew")
+        assert phase == "custom_crafting"
+        assert hint["game"] == "stardew_valley"
+        assert "cooking_recipe_generator" in hint["generators"]
+
     def test_execution_order_set(self):
         phase, hint = route("tv shopping channel")
         assert hint["execution_order"] == hint["generators"]
+
+    def test_farm_expansion_routing(self):
+        phase, hint = route("create a farm expansion with new buildings")
+        assert phase == "farm_expansion"
+        assert hint["game"] == "stardew_valley"
+        assert "building_generator" in hint["generators"]
+        assert "warp_point_generator" in hint["generators"]
+        assert "map_edit_generator" in hint["generators"]
+        assert "farm_expansion_content_json_generator" in hint["generators"]
+
+    def test_building_keyword_routing(self):
+        phase, hint = route("add custom buildings to stardew valley")
+        assert phase == "farm_expansion"
+        assert "building_generator" in hint["generators"]
+
+    def test_warp_keyword_routing(self):
+        phase, hint = route("add warp points to my farm")
+        assert phase == "farm_expansion"
+        assert "warp_point_generator" in hint["generators"]
+
+    def test_map_edit_keyword_routing(self):
+        phase, hint = route("map edit for farm")
+        assert phase == "farm_expansion"
+        assert "map_edit_generator" in hint["generators"]
 
 
 class TestNPCScheduleRouting:
@@ -63,6 +108,15 @@ class TestNPCScheduleRouting:
         assert order.index("manifest_generator") < order.index("npc_schedule_generator")
         assert order.index("npc_schedule_generator") < order.index("npc_dialogue_generator")
         assert order.index("npc_dialogue_generator") < order.index("npc_content_json_generator")
+
+
+class TestCustomCraftingRouting:
+    def test_custom_crafting_execution_order(self):
+        phase, hint = route("custom crafting and cooking recipes")
+        assert phase == "custom_crafting"
+        order = hint["execution_order"]
+        assert order.index("crafting_recipe_generator") < order.index("cooking_recipe_generator")
+        assert order.index("cooking_recipe_generator") < order.index("crafting_content_json_generator")
 
 
 class TestPhaseByKeyword:

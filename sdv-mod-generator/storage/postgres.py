@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 logger = structlog.get_logger()
 
@@ -16,7 +16,8 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 _init_lock = threading.Lock()
 
 
-def get_engine():
+def get_engine() -> "AsyncEngine":
+    """Return the singleton async SQLAlchemy engine, creating it if needed."""
     global _engine
     if _engine is None:
         with _init_lock:
@@ -65,15 +66,20 @@ async def init_db() -> None:
 
     logger.info("storage.postgres.init_db", database_url=_DATABASE_URL.split("@")[1] if "@" in _DATABASE_URL else "local")
     init_sql_path = PathLib(__file__).parent.parent / "db" / "init.sql"
+    if not init_sql_path.exists():
+        logger.error("storage.postgres.init_db.missing_sql", path=str(init_sql_path))
+        raise FileNotFoundError(f"Database init SQL not found: {init_sql_path}")
     sql = init_sql_path.read_text()
 
     engine = get_engine()
     async with engine.begin() as conn:
-        for stmt in sql.split(";"):
-            stmt = stmt.strip()
-            if stmt:
-                from sqlalchemy import text
-                await conn.execute(text(stmt))
+        # Split by semicolon but preserve statements that contain semicolons
+        # inside string literals. A simple split is sufficient for our
+        # init.sql which only uses semicolons as statement terminators.
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        for stmt in statements:
+            from sqlalchemy import text
+            await conn.execute(text(stmt))
 
     logger.info("storage.postgres.init_db.done")
 

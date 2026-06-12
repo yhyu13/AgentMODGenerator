@@ -7,6 +7,7 @@ import os
 import shutil
 import threading
 from pathlib import Path
+from typing import Any
 
 import boto3
 import structlog
@@ -26,6 +27,7 @@ _client_lock = threading.Lock()
 
 
 def _is_local_mode() -> bool:
+    """Return True when no AWS credentials are configured (local filesystem fallback)."""
     if _AWS_ACCESS_KEY_ID:
         return False
     if _ENDPOINT_URL and "localhost" not in _ENDPOINT_URL:
@@ -33,7 +35,8 @@ def _is_local_mode() -> bool:
     return True
 
 
-def get_client():
+def get_client() -> Any | None:
+    """Return the singleton S3 boto3 client, or None in local mode."""
     global _client
     if _client is not None:
         return _client
