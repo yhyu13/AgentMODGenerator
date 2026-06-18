@@ -68,9 +68,12 @@ async def lifespan(app: FastAPI):
     yield
 
     if bot_task:
-        from app.discord.bot import get_bot
+        from app.discord.bot import get_bot, get_notifier
         bot = get_bot()
+        notifier = get_notifier()
         bot_task.cancel()
+        if notifier:
+            await notifier.stop()
         if bot:
             try:
                 await bot.close()

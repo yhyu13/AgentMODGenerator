@@ -8,8 +8,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from app.config import get_config
+from app.discord.notifier import CompletionNotifier
 from orchestrator.pipeline import run_pipeline_background
-from storage.redis import set_status as redis_set_status
+from storage.redis import set_notification_target, set_status as redis_set_status
 
 logger = structlog.get_logger()
 
@@ -19,6 +20,11 @@ _intents.message_content = True
 
 _bot: commands.Bot | None = None
 _bot_ready: asyncio.Event = asyncio.Event()
+_notifier: CompletionNotifier | None = None
+
+
+def get_notifier() -> CompletionNotifier | None:
+    return _notifier
 
 
 def _patch_http_for_proxy() -> None:
@@ -133,6 +139,11 @@ async def start_bot() -> None:
 
         try:
             await redis_set_status(request_id, "pending")
+            await set_notification_target(
+                request_id,
+                user_id=user_id,
+                channel_id=interaction.channel_id or 0,
+            )
             run_pipeline_background(request_id, user_id, prompt)
 
             await interaction.followup.send(
@@ -272,8 +283,11 @@ async def start_bot() -> None:
 
     @_bot.event
     async def on_ready() -> None:
+        global _notifier
         logger.info("discord.bot.ready", user=str(_bot.user), bot_id=_bot.user.id if _bot.user else None)
         _bot_ready.set()
+        _notifier = CompletionNotifier(_bot)
+        _notifier.start()
 
     logger.info("discord.bot.starting", app_id=config.discord_app_id or "global")
     # No timeout: bot.start() is the long-lived connection. A 30s wait_for

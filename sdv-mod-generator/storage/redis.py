@@ -89,3 +89,49 @@ async def close_client() -> None:
         await _client.close()
         _client = None
         logger.info("storage.redis.closed")
+
+
+async def set_notification_target(
+    request_id: str,
+    user_id: str,
+    channel_id: int,
+    ttl: int = 3600,
+) -> None:
+    """Register a Discord user/channel to notify when a request completes.
+
+    The completion notifier watcher reads these keys and DMs the zip on done/failed.
+    """
+    client = await get_client()
+    key = f"discord:notify:{request_id}"
+    payload = json.dumps({"user_id": str(user_id), "channel_id": str(channel_id)})
+    await client.set(key, payload, ex=ttl)
+    logger.info(
+        "storage.redis.set_notification_target",
+        request_id=request_id, user_id=user_id, channel_id=channel_id,
+    )
+
+
+async def list_pending_notifications() -> list[tuple[str, dict]]:
+    """Yield (request_id, target) for every registered notification.
+
+    Uses SCAN to avoid blocking Redis (KEYS is O(N) and forbidden in prod).
+    """
+    client = await get_client()
+    out: list[tuple[str, dict]] = []
+    async for key in client.scan_iter(match="discord:notify:*", count=100):
+        data = await client.get(key)
+        if not data:
+            continue
+        try:
+            payload = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        request_id = key.split(":", 2)[2]  # discord:notify:<id>
+        out.append((request_id, payload))
+    return out
+
+
+async def delete_notification_target(request_id: str) -> None:
+    client = await get_client()
+    await client.delete(f"discord:notify:{request_id}")
+    logger.info("storage.redis.delete_notification_target", request_id=request_id)
