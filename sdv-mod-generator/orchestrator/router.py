@@ -115,6 +115,20 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
             best_keyword_len = len(keyword)
             matched_phase = phase
 
+    # Weather-event priority override: when the prompt contains BOTH a
+    # weather keyword (rain/storm/snow/wind/weather/buff) AND the generic
+    # ``event`` word, prefer ``weather_event`` over ``event_mod``. Without
+    # this, the longest-keyword-wins tie between ``"event"`` (5 chars) and
+    # ``"storm"``/``"rain"`` (4-5 chars) resolves to ``event_mod`` purely
+    # by dict-insertion order, even though semantically the user wants a
+    # weather event (e.g. ``"add a rain storm event"``). Festival/event
+    # prompts without any weather keyword still resolve to ``event_mod``
+    # via the main loop above.
+    if matched_phase == "event_mod" and any(
+        k in prompt_lower for k in ("rain", "storm", "snow", "wind", "weather", "buff")
+    ):
+        matched_phase = "weather_event"
+
     if matched_phase is None:
         matched_phase = phase_map.get("shop", "shop_channel")
 
