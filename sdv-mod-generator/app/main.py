@@ -15,7 +15,7 @@ from app.metrics import (
     API_REQUESTS_TOTAL,
     render_metrics,
 )
-from app.middleware import RequestIdMiddleware
+from app.middleware import RequestIdMiddleware, SecurityHeadersMiddleware
 
 logger = get_logger()
 
@@ -100,6 +100,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="SDV Mod Generator", version="0.1.0", lifespan=lifespan)
 
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIdMiddleware)
 app.include_router(api_router)
 
