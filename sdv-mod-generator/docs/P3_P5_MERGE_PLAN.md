@@ -1,9 +1,10 @@
 # P3-P5 Merge Plan: extracting value from discord-ops-hardening
 
-## Current state (as of 2026-07-02, end of session)
+## Current state (as of 2026-07-03, end of session)
 
-- `master` at 76d0106, 312/312 tests pass, pushed to origin
+- `master` at 83a56fe, 312/312 tests pass, pushed to origin
 - `discord-ops-hardening` at dfb3dd7, untouched in this session (still has the 18 commits with cron noise)
+- `dual-agent-continuous` cron job (id `8faa6346fe1e`) updated with a new prompt: silent-exit when shell is blocked, real work (≤200 lines/commit, one round per tick, branch-prefix `cron/<timestamp>`) when shell works. Next run 2026-07-03 ~07:12 UTC+8.
 
 ### Session progress (2026-07-01 → 2026-07-02)
 
@@ -138,9 +139,11 @@ The original plan called for 6 PRs:
 
 ## Next session recommendations
 
-1. **Delete the branch** once you've verified master at 76d0106 looks good. The branch is drained.
+1. **Check the cron's first few runs under the new prompt.** Verify the silent-exit path is still silent (no DIAG doc spam), and if any cron tick has shell available, look at `docs/DUAL_AGENT_RUN_latest.md` for what it produced. Branches will appear under `cron/<timestamp>` prefixes — review them, cherry-pick the good ones to master.
 
-2. **Decide on the cron job** — either retire it (cronjob action=remove) or repoint it at a real working area with a real prompt. As configured, it's a no-op every 15 minutes.
+2. **Delete the branch** once you've verified master at 76d0106 looks good. The branch is drained.
+
+2. **Decide on the cron job** — DONE in this session. New prompt is in place (silent-exit on shell block, real work when shell works, ≤200 lines, branch-prefix `cron/<timestamp>`). Old duplicate "Decide on cron" recommendation superseded.
 
 3. **Pick the next thing from the branch** if you want more value. The top candidates, ranked by value-to-effort:
 
