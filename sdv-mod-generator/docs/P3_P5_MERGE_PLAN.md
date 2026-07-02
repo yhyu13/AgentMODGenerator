@@ -4,7 +4,7 @@
 
 - `master` at 83a56fe, 312/312 tests pass, pushed to origin
 - `discord-ops-hardening` at dfb3dd7, untouched in this session (still has the 18 commits with cron noise)
-- `dual-agent-continuous` cron job (id `8faa6346fe1e`) updated with a new prompt: silent-exit when shell is blocked, real work (≤200 lines/commit, one round per tick, branch-prefix `cron/<timestamp>`) when shell works. Next run 2026-07-03 ~07:12 UTC+8.
+- `dual-agent-continuous` cron job (id `8faa6346fe1e`) updated with a delegation-based prompt. Single-agent per tick. Silent-exit when subagent + parent both blocked; real work when subagent has shell. Branch-prefix `cron/<timestamp>`. Next run 2026-07-03 ~07:28 UTC+8.
 
 ### Session progress (2026-07-01 → 2026-07-02)
 
