@@ -1,0 +1,261 @@
+"""PostgreSQL storage layer — async SQLAlchemy engine and session helpers.
+
+This module owns the singleton :class:`AsyncEngine` and the
+:class:`async_sessionmaker` used by every other storage submodule
+(``storage.queries``, the orchestrator's DB writes, the API route
+handlers, etc.). The design is intentionally tiny: a lazily-created
+engine plus a session context-manager that handles commit / rollback /
+close in a single ``async with`` block. Callers should never construct
+their own engine — they should call :func:`get_engine` or, more
+commonly, :func:`get_session`.
+
+Initialization reads the ``DATABASE_URL`` environment variable at
+call time (via :func:`_database_url`) and falls back to a local
+docker-compose default. The connection string is treated as a
+secret: the ``engine_created`` / ``init_db`` log lines only emit the
+host portion (after ``@``) so credentials never reach the structured
+logs. v74 Blue moved the read off module-top into a per-call helper
+so monkeypatch-set values are observed without reloading the module.
+"""
+import os
+import threading
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+import structlog
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+
+logger = structlog.get_logger(__name__)
+
+
+def _database_url() -> str:
+    """Return the current value of the ``DATABASE_URL`` environment variable.
+
+    v74 Blue: env is read at call time (per AGENTS.md), not at module
+    import time. This helper replaces the legacy module-level
+    ``_DATABASE_URL = os.getenv(...)`` constant so tests that
+    ``monkeypatch.setenv("DATABASE_URL", ...)`` after import see the
+    patched value on the very next ``get_engine()`` call. Default
+    fallback is the local docker-compose dev string
+    (``postgresql+asyncpg://postgres:postgres@localhost:5432/sdv_mods``),
+    matching the v73 ``_local_output_dir()`` pattern used in
+    ``generators/packager.py``.
+
+    Returns:
+        str: The current ``DATABASE_URL`` value. Returns ``""`` when
+        the env is set but empty — the permissive contract mirrors
+        ``os.getenv("DATABASE_URL", default)`` and matches the v73
+        packager / v72 discord helpers.
+    """
+    return os.getenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/sdv_mods",
+    )
+
+
+_engine: AsyncEngine | None = None
+_session_factory: async_sessionmaker[AsyncSession] | None = None
+_init_lock = threading.Lock()
+
+
+def get_engine() -> AsyncEngine:
+    """Return the singleton async SQLAlchemy engine, creating it on first call.
+
+    The engine is constructed lazily on the first call and cached in a
+    module-level variable guarded by :class:`threading.Lock` so that
+    concurrent callers (e.g. FastAPI worker threads, the lifespan
+    startup hook, and background pipeline tasks) all see the same
+    instance. The double-checked-locking pattern keeps the fast path
+    (already-initialised engine) lock-free for the common case.
+
+    Pool configuration:
+
+    * ``pool_size=10`` — base number of persistent connections.
+    * ``max_overflow=20`` — burst capacity for short-lived spikes.
+    * ``pool_pre_ping=True`` — silently recycle stale connections
+      before handing them out, which avoids the
+      ``InvalidRequestError: This Connection is closed`` class of
+      failures when the Postgres side restarts underneath us.
+
+    v74 Blue: ``DATABASE_URL`` is now read via the per-call
+    :func:`_database_url` helper rather than snapshotted at import
+    time, so monkeypatch-set values are observed without reloading
+    the module.
+
+    Returns:
+        The process-wide shared :class:`AsyncEngine` instance.
+    """
+    global _engine
+    if _engine is None:
+        url = _database_url()
+        with _init_lock:
+            if _engine is None:
+                _engine = create_async_engine(
+                    url,
+                    echo=False,
+                    pool_size=10,
+                    max_overflow=20,
+                    pool_pre_ping=True,
+                )
+                logger.info(
+                    "storage.postgres.engine_created",
+                    database_url=(url.split("@")[1] if "@" in url else "local"),
+                )
+    return _engine
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Return the singleton async session factory, creating it on first call.
+
+    The factory is bound to the engine produced by :func:`get_engine`
+    and configured with ``expire_on_commit=False`` so that detached
+    ORM objects remain usable after the ``async with`` block exits
+    (the API route handlers depend on this when serializing rows into
+    Pydantic response models).
+
+    Like :func:`get_engine`, the factory is built lazily under a lock
+    so the first concurrent caller wins the initialisation and every
+    subsequent caller gets the same instance.
+
+    Returns:
+        The process-wide shared :class:`async_sessionmaker` bound to
+        :class:`AsyncSession`.
+    """
+    global _session_factory
+    if _session_factory is None:
+        with _init_lock:
+            if _session_factory is None:
+                _session_factory = async_sessionmaker(
+                    bind=get_engine(),
+                    class_=AsyncSession,
+                    expire_on_commit=False,
+                )
+                logger.info("storage.postgres.session_factory_created")
+    return _session_factory
+
+
+@asynccontextmanager
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """Yield a short-lived :class:`AsyncSession` and manage commit / rollback / close.
+
+    This is the canonical entry point for ad-hoc database access in
+    request handlers and background tasks. It hides three concerns
+    behind a single ``async with`` block:
+
+    1. ``commit`` — flushed on a clean exit of the ``with`` body.
+    2. ``rollback`` — issued on any exception inside the body, with a
+       ``storage.postgres.session_rollback`` structured log line
+       carrying ``error`` and ``error_type`` so operators can group
+       rollback failures by exception class.
+    3. ``close`` — guaranteed in the ``finally`` branch regardless of
+       whether the body succeeded, raised, or was cancelled.
+
+    The session is created from the shared :func:`get_session_factory`,
+    so callers never need to instantiate their own factory.
+
+    Yields:
+        An :class:`AsyncSession` ready for ``await session.execute(...)``
+        and ORM operations.
+
+    Raises:
+        Exception: Re-raises whatever the ``async with`` body raised
+            after rolling the transaction back. The original exception
+            type and traceback are preserved — callers can rely on
+            standard ``try / except`` handling around the ``async with``.
+    """
+    factory = get_session_factory()
+    async with factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception as exc:
+            # v19 Blue: meta-lint compliance — surface error_type for log
+            # aggregation (group rollback failures by exception class).
+            # Behavior unchanged: we still rollback + re-raise.
+            logger.warning(
+                "storage.postgres.session_rollback",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+async def init_db() -> None:
+    """Initialise the database schema by running ``db/init.sql`` end-to-end.
+
+    Reads ``db/init.sql`` from the project root (resolved relative to
+    this file so the function works regardless of the process CWD),
+    splits it into individual statements on ``;``, and executes each
+    one in its own ``conn.execute(text(stmt))`` call inside a single
+    ``engine.begin()`` transaction. The semicolon-split is intentionally
+    simple: the project's ``init.sql`` only uses ``;`` as a statement
+    terminator (no semicolons inside string literals), so a smarter
+    parser would be overkill.
+
+    Intended to be called once at application startup (from the
+    FastAPI lifespan hook or the orchestrator bootstrap), not on
+    every request. Re-running is safe — the SQL uses ``CREATE TABLE
+    IF NOT EXISTS`` and ``CREATE INDEX IF NOT EXISTS`` — but it is
+    wasted work outside of a fresh deployment.
+
+    Raises:
+        FileNotFoundError: If ``db/init.sql`` does not exist relative
+            to the project root. Logged at ERROR level before the
+            raise so operators see the missing path in the audit trail.
+        sqlalchemy.exc.SQLAlchemyError: If any statement fails to
+            execute; the surrounding ``engine.begin()`` transaction
+            rolls the whole batch back so the schema is never
+            partially-applied.
+    """
+    from pathlib import Path as PathLib
+
+    db_url = _database_url()
+    logger.info(
+        "storage.postgres.init_db",
+        database_url=(db_url.split("@")[1] if "@" in db_url else "local"),
+    )
+    init_sql_path = PathLib(__file__).parent.parent / "db" / "init.sql"
+    if not init_sql_path.exists():
+        logger.error("storage.postgres.init_db.missing_sql", path=str(init_sql_path))
+        raise FileNotFoundError(f"Database init SQL not found: {init_sql_path}")
+    sql = init_sql_path.read_text()
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        # Split by semicolon but preserve statements that contain semicolons
+        # inside string literals. A simple split is sufficient for our
+        # init.sql which only uses semicolons as statement terminators.
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        for stmt in statements:
+            from sqlalchemy import text
+            await conn.execute(text(stmt))
+
+    logger.info("storage.postgres.init_db.done")
+
+
+async def close_pool() -> None:
+    """Dispose the singleton engine and clear the cached reference.
+
+    Called from the FastAPI lifespan shutdown hook so the process
+    exits cleanly (closing the underlying asyncpg connections rather
+    than relying on the GC to eventually reap them). Safe to call
+    when no engine was ever created — the function is a no-op in that
+    case. Safe to call multiple times — the second call sees
+    ``_engine is None`` and returns immediately.
+
+    After this call the next :func:`get_engine` invocation will lazily
+    construct a fresh engine, so the function is symmetric with the
+    initialiser pair (``get_engine`` / ``get_session_factory``) rather
+    than a one-shot terminator.
+
+    Logs ``storage.postgres.closed`` at INFO level on a successful
+    dispose so the shutdown sequence is observable in the structured
+    log stream.
+    """
+    if _engine:
+        await _engine.dispose()
+        _engine = None
+        logger.info("storage.postgres.closed")

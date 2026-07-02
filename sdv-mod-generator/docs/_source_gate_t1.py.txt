@@ -1,0 +1,353 @@
+"""Tier 1 deterministic quality checks — real implementation.
+
+T1 is the project's first quality gate, run between the generator
+output aggregation node and the LLM-judge T2 panel. It enforces a
+small set of *deterministic* invariants — file-level JSON / TSV
+shape, Content Patcher manifest required fields, TSV header column
+order — that a static analysis pass can verify without an LLM in the
+loop. The gate's output (:class:`T1Result`) drives the LangGraph
+conditional edge between T1 and T2 (T1 must pass before the
+expensive 3-judge T2 panel is invoked).
+
+Design notes:
+
+* **Pure / no LLM.** The gate never calls :func:`llm.client.get_client`;
+  if the LLM stack is misconfigured the gate still runs. That keeps
+  it cheap (sub-millisecond per request) and gives operators a clean
+  signal of "the schema is wrong" independent of "the LLM disagreed".
+* **Fail-soft on empty outputs.** When the pipeline produced no
+  generator outputs at all the gate emits the explicit
+  ``t1_gate.no_generators`` error rather than raising — callers can
+  branch on the message text without an exception class to import.
+* **Per-generator specialisation.** :func:`_gen_specific_validation`
+  adds the per-generator checks (manifest field set, shop TSV header,
+  config schema presence, trigger-actions shape, mail-file presence,
+  content.json action array). The generic file-level checks live in
+  :func:`_validate_file` and run for every file regardless of
+  generator.
+
+The :func:`run_t1` entry point is the only public symbol the rest of
+the project is expected to import; everything else is internal and
+may change without a deprecation cycle.
+"""
+import json
+import structlog
+from dataclasses import dataclass, field
+
+from generators.base import GeneratorOutput
+
+logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class T1Result:
+    """The aggregate result of one T1 gate run.
+
+    Attributes:
+        passed: ``True`` iff no per-file or per-generator error was
+            collected. The pipeline treats this as the green-light
+            signal that allows the T2 panel to run. Note that a
+            :data:`passed` value of ``True`` does *not* mean the mod
+            is good — only that it passed the deterministic schema
+            check. The T2 panel makes the quality verdict.
+        errors: Human-readable list of error messages collected across
+            every per-file and per-generator check. Empty when
+            :data:`passed` is ``True``. Each message is prefixed with
+            the offending generator name (``"<gen_name>: <file_path>
+            <reason>"``) so operators can grep logs by generator.
+            The order mirrors the iteration order of the input
+            ``outputs`` dict (insertion order, CPython 3.7+).
+    """
+    passed: bool
+    errors: list[str] = field(default_factory=list)
+
+
+def run_t1(request_id: str, outputs: dict[str, GeneratorOutput]) -> T1Result:
+    """Run Tier 1 deterministic checks.
+
+    Validates:
+    - All file contents are valid JSON (or TSV for data files)
+    - manifest.json has all required Content Patcher fields
+    - ConfigSchema field values are valid
+    - Shop TSV has correct column structure
+    - No empty required fields
+    """
+    logger.info("quality.t1.run", request_id=request_id, output_count=len(outputs))
+    all_errors: list[str] = []
+
+    if not outputs:
+        all_errors.append("t1_gate.no_generators: pipeline produced no outputs")
+
+    for gen_name, output in outputs.items():
+        errors = _validate_generator_output(gen_name, output)
+        all_errors.extend(errors)
+
+    passed = len(all_errors) == 0
+    if passed:
+        logger.info("quality.t1.done", request_id=request_id, passed=True)
+    else:
+        logger.warning("quality.t1.done", request_id=request_id, passed=False, error_count=len(all_errors))
+
+    return T1Result(passed=passed, errors=all_errors)
+
+
+def _validate_generator_output(gen_name: str, output: GeneratorOutput) -> list[str]:
+    """Run the per-file + per-generator checks for one generator output.
+
+    Composes two passes:
+
+    1. :func:`_validate_file` for every entry in ``output.files`` —
+       the generic JSON / TSV shape checks.
+    2. :func:`_gen_specific_validation` for the generator's special
+       rules (manifest field set, shop TSV header, config schema
+       presence, trigger-actions shape, mail-file presence,
+       content.json action array).
+
+    The returned list is the concatenation of both passes' error
+    lists, in that order. An empty list means the generator's output
+    passed every applicable check.
+
+    Args:
+        gen_name: Display name of the generator (e.g.
+            ``"manifest_generator"``). Used only to prefix error
+            messages so operators can trace errors back to the source
+            generator; never used to drive behaviour.
+        output: The :class:`GeneratorOutput` produced by ``gen_name``
+            during the pipeline run.
+
+    Returns:
+        list[str]: Concatenated error messages from both validation
+        passes. Empty when every check passed.
+    """
+    errors: list[str] = []
+
+    for file_path, content in output.files.items():
+        file_errors = _validate_file(gen_name, file_path, content)
+        errors.extend(file_errors)
+
+    gen_specific = _gen_specific_validation(gen_name, output)
+    errors.extend(gen_specific)
+
+    return errors
+
+
+def _validate_file(gen_name: str, file_path: str, content: dict | list | str) -> list[str]:
+    """Run the generic JSON / TSV shape checks for a single generated file.
+
+    Branches on the ``file_path`` suffix:
+
+    * ``.json`` — requires the content to be a JSON object or array.
+      When the generator emitted a JSON-encoded *string* (the v48
+      shape) the helper parses it first and surfaces the parsed
+      Python type (``dict``, ``list``, ``str``, ``int``, ...) on
+      failure so operators can tell the difference between "not
+      JSON" and "JSON but not an object/array" without re-running
+      with a debugger.
+    * ``.tsv`` — requires the content to be a non-empty ``str``.
+      An empty / whitespace-only TSV is rejected explicitly. The
+      helper does NOT validate column structure here — that lives
+      in :func:`_gen_specific_validation` for the
+      ``shop_item_pool_generator`` arm, because TSV column order is
+      generator-specific.
+    * Other extensions — no checks; the function returns an empty
+      list. (Per-generator rules for non-JSON / non-TSV files live
+      in :func:`_gen_specific_validation` when applicable, e.g. the
+      ``mail_system_generator`` arm that scans for ``mail/`` files.)
+
+    Args:
+        gen_name: Display name of the generating generator. Used as
+            the error-message prefix so operators can trace the
+            error back to its source.
+        file_path: Relative path of the generated file (e.g.
+            ``"manifest.json"``). The suffix is the only inspected
+            part.
+        content: The raw content the generator produced. For
+            ``.json`` files this may be a ``dict`` / ``list`` (the
+            Pydantic-friendly shape) or a ``str`` containing JSON
+            text (the v48 string-encoded shape). For ``.tsv`` files
+            this must be a ``str``.
+
+    Returns:
+        list[str]: Error messages, empty when the file passed all
+        applicable shape checks.
+    """
+    errors: list[str] = []
+
+    if file_path.endswith(".json"):
+        if not isinstance(content, (dict, list)):
+            if isinstance(content, str):
+                try:
+                    parsed = json.loads(content)
+                    if not isinstance(parsed, (dict, list)):
+                        # Surface the parsed JSON's actual type (e.g.
+                        # ``str``, ``int``) so operators can debug
+                        # malformed generator output without re-running
+                        # with a debugger. Mirrors the TSV branch's
+                        # ``type(content).__name__`` disclosure below.
+                        errors.append(
+                            f"{gen_name}: {file_path} parsed but is not a JSON object or array "
+                            f"(got {type(parsed).__name__})"
+                        )
+                except json.JSONDecodeError:
+                    errors.append(f"{gen_name}: {file_path} is not valid JSON")
+            else:
+                # Surface the actual Python type so operators can see at
+                # a glance whether a generator returned an int / bool /
+                # None / model instance instead of a dict / list. Without
+                # this disclosure, a generator that emits ``42`` for a
+                # JSON file surfaces the same opaque message as one that
+                # emits ``False`` — both indistinguishable.
+                errors.append(
+                    f"{gen_name}: {file_path} is not a JSON object or array "
+                    f"(got {type(content).__name__})"
+                )
+    elif file_path.endswith(".tsv"):
+        if isinstance(content, str):
+            # ``content.strip().split("\n")`` always yields >= 1 element
+            # (even an empty/whitespace-only string splits to ``[""]``),
+            # so the previous ``len(lines) < 1`` check was dead code and
+            # silently let empty TSVs pass. Detect emptiness *before* the
+            # split on the stripped string so the error path actually
+            # fires for empty files.
+            stripped = content.strip()
+            if not stripped:
+                errors.append(f"{gen_name}: {file_path} is empty")
+        else:
+            errors.append(f"{gen_name}: {file_path} expected TSV string, got {type(content).__name__}")
+
+    return errors
+
+
+def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str]:
+    """Run the per-generator specialisation rules.
+
+    Each supported generator name maps to a small set of structural
+    checks that the generic :func:`_validate_file` pass cannot
+    express — Content Patcher manifest field set, shop TSV header
+    column order, etc. Unknown generator names pass through
+    silently (return an empty list) so a new generator can be added
+    to the pipeline before the T1 gate learns about it.
+
+    Arms and the rules they enforce:
+
+    * ``manifest_generator`` — ``manifest.json`` must be a dict and
+      must contain the Content Patcher required fields
+      (``Format``, ``UniqueID``, ``Name``, ``Version``,
+      ``ContentPackFor``). ``ContentPackFor.UniqueID`` is also
+      required when ``ContentPackFor`` is itself a dict.
+    * ``shop_item_pool_generator`` — ``assets/data/shops.tsv`` must
+      be a non-empty string whose first line is exactly the
+      ``ItemType,ItemName,ItemName2,Price,Stock`` header.
+    * ``config_schema_generator`` — ``config.json`` must be a dict
+      and must contain an ``Enabled`` field.
+    * ``trigger_logic_generator`` — ``data/trigger_actions.json``
+      must be a non-empty dict.
+    * ``mail_system_generator`` — at least one ``mail/`` prefixed
+      file must be present in the output.
+    * ``content_json_generator`` — ``content.json`` must be a list
+      of action objects; every action must be a dict with an
+      ``Action`` field.
+
+    All arms guard against non-dict / non-list shapes with explicit
+    ``isinstance(...)`` checks so a misbehaving generator surfaces a
+    precise type-disclosure error rather than a ``TypeError`` from
+    the inner ``in`` membership test (the v48 pattern).
+
+    Args:
+        gen_name: Display name of the generating generator. Drives
+            which arm (if any) runs; unknown names return ``[]``.
+        output: The :class:`GeneratorOutput` produced by ``gen_name``
+            during the pipeline run. Each arm inspects
+            ``output.files`` with a generator-specific key (e.g.
+            ``"manifest.json"``).
+
+    Returns:
+        list[str]: Concatenated error messages from the matching
+        arm. Empty when ``gen_name`` is unknown or when the matching
+        arm produced no errors.
+    """
+    errors: list[str] = []
+
+    if gen_name == "manifest_generator":
+        manifest = output.files.get("manifest.json", {})
+        # Guard against non-dict manifest content. The ``field_name not in
+        # manifest`` membership test would raise ``TypeError`` if a generator
+        # emitted an int / list / None for ``manifest.json`` — that crash
+        # would short-circuit the gate and hide the per-field error report
+        # operators need to fix the generator. Surface a clear type-disclosure
+        # error instead, matching the pattern in ``_validate_file`` (v48).
+        if not isinstance(manifest, dict):
+            errors.append(
+                f"manifest_generator: manifest.json is not a JSON object "
+                f"(got {type(manifest).__name__})"
+            )
+        else:
+            required = ["Format", "UniqueID", "Name", "Version", "ContentPackFor"]
+            for field_name in required:
+                if field_name not in manifest:
+                    errors.append(f"manifest_generator: missing required field '{field_name}'")
+            # ``ContentPackFor`` membership on a dict is now safe (guarded above),
+            # but keep the inner ``isinstance(cpf, dict)`` check for forward
+            # compatibility — a generator that sets ``ContentPackFor`` to a list
+            # should still get a precise error, not a TypeError on the nested
+            # ``UniqueID`` lookup.
+            if "ContentPackFor" in manifest:
+                cpf = manifest["ContentPackFor"]
+                if isinstance(cpf, dict) and "UniqueID" not in cpf:
+                    errors.append("manifest_generator: ContentPackFor.UniqueID missing")
+
+    elif gen_name == "shop_item_pool_generator":
+        shops_tsv = output.files.get("assets/data/shops.tsv", "")
+        if isinstance(shops_tsv, str):
+            lines = shops_tsv.strip().split("\n")
+            if len(lines) < 2:
+                errors.append("shop_item_pool_generator: assets/data/shops.tsv has no data rows")
+            else:
+                header = lines[0].split("\t")
+                expected = ["ItemType", "ItemName", "ItemName2", "Price", "Stock"]
+                if header != expected:
+                    errors.append(f"shop_item_pool_generator: assets/data/shops.tsv header mismatch — expected {expected}, got {header}")
+
+    elif gen_name == "config_schema_generator":
+        config = output.files.get("config.json", {})
+        # Guard against non-dict config content. ``"Enabled" not in config``
+        # raises ``TypeError`` on an int / list / None — that crash would
+        # bypass the gate's error reporting. Surface a clear type-disclosure
+        # error instead, matching the v48 pattern in ``_validate_file``.
+        if not isinstance(config, dict):
+            errors.append(
+                f"config_schema_generator: config.json is not a JSON object "
+                f"(got {type(config).__name__})"
+            )
+        elif "Enabled" not in config:
+            errors.append("config_schema_generator: config.json missing 'Enabled' field")
+
+    elif gen_name == "trigger_logic_generator":
+        triggers = output.files.get("data/trigger_actions.json", {})
+        # ``if not triggers`` is permissive — an int 0, empty string, or
+        # None all count as "missing or empty", but a *non-empty* list of
+        # ints would silently pass as "present and well-formed". Require
+        # a non-empty dict so the gate's contract matches the rest of the
+        # JSON-object generators (``manifest_generator``, ``config_schema_generator``).
+        if not isinstance(triggers, dict) or not triggers:
+            errors.append("trigger_logic_generator: data/trigger_actions.json missing or empty")
+
+    elif gen_name == "mail_system_generator":
+        mail_files = [v for k, v in output.files.items() if k.startswith("mail/")]
+        if not mail_files:
+            errors.append("mail_system_generator: no mail files generated")
+
+    elif gen_name == "content_json_generator":
+        content = output.files.get("content.json")
+        if not content:
+            errors.append("content_json_generator: content.json missing")
+        elif not isinstance(content, list):
+            errors.append("content_json_generator: content.json must be an array of actions")
+        else:
+            for i, action in enumerate(content):
+                if not isinstance(action, dict):
+                    errors.append(f"content_json_generator: content.json[{i}] is not an object")
+                elif "Action" not in action:
+                    errors.append(f"content_json_generator: content.json[{i}] missing 'Action' field")
+
+    return errors
