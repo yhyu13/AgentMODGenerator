@@ -6,6 +6,8 @@ from typing import Any
 import aiohttp
 import structlog
 from fastapi import Request, HTTPException, status
+from nacl.exceptions import BadSignatureError as BadSignature
+from nacl.signing import VerifyKey
 
 logger = structlog.get_logger()
 
@@ -14,27 +16,27 @@ _DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 
 def verify_signature(body: bytes, signature: str, timestamp: str) -> bool:
-    """Verify Discord interaction signature using Ed25519.
+    """Verify a Discord interaction signature using Ed25519.
 
-    Discord interaction signatures use Ed25519 (not HMAC-SHA256).
-    The signature header is 'x-signature-ed25519' and the public key
-    is provided in the Discord app configuration.
+    Discord signs ``timestamp + body`` with the app's private key. The
+    signature header is ``x-signature-ed25519`` (hex-encoded). See:
+    https://discord.com/developers/docs/interactions/receiving-and-responding#security-and-authorization
     """
     if not _DISCORD_PUBLIC_KEY:
-        logger.warning("discord.webhook.verify_signature.failed", reason="missing_public_key")
+        logger.warning("discord.webhook.verify_signature.skipped", reason="missing_public_key")
         return False
     if not signature or not timestamp:
         return False
-    # NOTE: Discord uses Ed25519 signatures, not HMAC-SHA256.
-    # Proper Ed25519 verification requires the PyNaCl library.
-    # For now, we log a warning and skip verification to avoid
-    # always-failing checks. Install PyNaCl and implement real
-    # verification before production use.
-    logger.warning(
-        "discord.webhook.verify_signature.stub",
-        reason="ed25519_verification_not_implemented",
-    )
-    return True
+    try:
+        verify_key = VerifyKey(bytes.fromhex(_DISCORD_PUBLIC_KEY))
+        verify_key.verify(timestamp.encode() + body, bytes.fromhex(signature))
+        return True
+    except (BadSignature, ValueError, TypeError) as exc:
+        logger.warning(
+            "discord.webhook.verify_signature.invalid",
+            error=str(exc), error_type=type(exc).__name__,
+        )
+        return False
 
 
 async def handle_interaction(request: Request) -> dict[str, Any]:
