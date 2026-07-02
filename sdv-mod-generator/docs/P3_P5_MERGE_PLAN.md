@@ -2,9 +2,16 @@
 
 ## Current state (as of 2026-07-03, end of session)
 
-- `master` at 83a56fe, 312/312 tests pass, pushed to origin
+- `master` at 7f1b205, 312/312 tests pass, pushed to origin
 - `discord-ops-hardening` at dfb3dd7, untouched in this session (still has the 18 commits with cron noise)
-- `dual-agent-continuous` cron job (id `8faa6346fe1e`) updated with a delegation-based prompt. Single-agent per tick. Silent-exit when subagent + parent both blocked; real work when subagent has shell. Branch-prefix `cron/<timestamp>`. Next run 2026-07-03 ~07:28 UTC+8.
+- `dual-agent-continuous` cron job (id `8faa6346fe1e`) confirmed working in file-only mode. Round 1 already shipped `orchestrator/feature_flags.py` (107 lines, cleanroom port) and `docs/PENDING_COMMIT_v1.md` (consumed by parent at 7f1b205). Next run 2026-07-03 ~07:41 UTC+8. The prompt now instructs the cron to do work directly (no subagent delegation) using pre-staged source bundles at `sdv-mod-generator/docs/_source_*.py.txt`.
+
+### Cron round 1 (verified shipped, 7f1b205)
+- **File produced:** `sdv-mod-generator/orchestrator/feature_flags.py` (107 lines)
+- **Source:** cleanroom port (the cron subagent could not read the discord-ops-hardening branch source; it inferred the four self-contained helpers from `docs/P3_P5_MERGE_PLAN.md` and the one known call site in `quality/gate_t2.py:is_enabled("t2_three_judge_panel")`)
+- **API surface:** `is_enabled(name)`, `record_override(name, value, *, reason, actor)`, `list_pins()`, `get_history(name=None)`, plus a `FlagOverride` dataclass
+- **Verified manually:** imports clean, fail-closed on unknown flag names, full test suite 312/312 green
+- **Limitation:** no persistence, no admin endpoints, no rollout percentages — those need the rest of the branch's rollout stack
 
 ### Session progress (2026-07-01 → 2026-07-02)
 
