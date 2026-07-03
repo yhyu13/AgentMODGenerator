@@ -16,7 +16,13 @@ async def create_mod_request(
     prompt: str,
     phase: str,
     generators: list[str],
-    hint: dict,
+    # v42 Blue: tightened from bare ``dict`` to match ``Mapped[dict[str, Any]]``
+    # declared on ``ModRequest.hint`` (storage/models/models.py L50). The bare
+    # annotation accepted any object at the type level, masking contract drift
+    # if a caller passed ``list[dict]`` or a plain ``str``. The ``get_session``
+    # ORM insert path serialises the value as JSON, so the narrower shape is
+    # honored both at type-check time and at runtime.
+    hint: dict[str, Any],
 ) -> None:
     async with get_session() as session:
         await session.execute(

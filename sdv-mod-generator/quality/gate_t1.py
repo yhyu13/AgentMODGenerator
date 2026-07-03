@@ -1,11 +1,41 @@
-"""Tier 1 deterministic quality checks — real implementation."""
+"""Tier 1 deterministic quality checks — real implementation.
+
+T1 is the project's first quality gate, run between the generator
+output aggregation node and the LLM-judge T2 panel. It enforces a
+small set of *deterministic* invariants — file-level JSON / TSV
+shape, Content Patcher manifest required fields, TSV header column
+order — that a static analysis pass can verify without an LLM in the
+loop. The gate's output (:class:`T1Result`) drives the LangGraph
+conditional edge between T1 and T2 (T1 must pass before the
+expensive 3-judge T2 panel is invoked).
+
+Design notes:
+
+* **Pure / no LLM.** The gate never calls ``llm.client.get_client``;
+  if the LLM stack is misconfigured the gate still runs. That keeps
+  it cheap (sub-millisecond per request) and gives operators a clean
+  signal of "the schema is wrong" independent of "the LLM disagreed".
+* **Fail-soft on empty outputs.** When the pipeline produced no
+  generator outputs at all the gate emits the explicit
+  ``t1_gate.no_generators`` error rather than raising — callers can
+  branch on the message text without an exception class to import.
+* **Per-generator specialisation.** ``_gen_specific_validation``
+  adds the per-generator checks (manifest field set, shop TSV header,
+  config schema presence, trigger-actions shape, mail-file presence,
+  content.json action array). The generic file-level checks live in
+  ``_validate_file`` and run for every file regardless of generator.
+
+The ``run_t1`` entry point is the only public symbol the rest of
+the project is expected to import; everything else is internal and
+may change without a deprecation cycle.
+"""
 import json
 import structlog
 from dataclasses import dataclass, field
 
 from generators.base import GeneratorOutput
 
-logger = structlog.get_logger()
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -56,7 +86,7 @@ def _validate_generator_output(gen_name: str, output: GeneratorOutput) -> list[s
     return errors
 
 
-def _validate_file(gen_name: str, file_path: str, content: dict | str) -> list[str]:
+def _validate_file(gen_name: str, file_path: str, content: dict | list | str) -> list[str]:
     errors: list[str] = []
 
     if file_path.endswith(".json"):
@@ -65,15 +95,38 @@ def _validate_file(gen_name: str, file_path: str, content: dict | str) -> list[s
                 try:
                     parsed = json.loads(content)
                     if not isinstance(parsed, (dict, list)):
-                        errors.append(f"{gen_name}: {file_path} is not a JSON object or array")
+                        # Surface the parsed JSON's actual type (e.g.
+                        # ``str``, ``int``) so operators can debug
+                        # malformed generator output without re-running
+                        # with a debugger. Mirrors the TSV branch's
+                        # ``type(content).__name__`` disclosure below.
+                        errors.append(
+                            f"{gen_name}: {file_path} parsed but is not a JSON object or array "
+                            f"(got {type(parsed).__name__})"
+                        )
                 except json.JSONDecodeError:
                     errors.append(f"{gen_name}: {file_path} is not valid JSON")
             else:
-                errors.append(f"{gen_name}: {file_path} is not a JSON object or array")
+                # Surface the actual Python type so operators can see at
+                # a glance whether a generator returned an int / bool /
+                # None / model instance instead of a dict / list. Without
+                # this disclosure, a generator that emits ``42`` for a
+                # JSON file surfaces the same opaque message as one that
+                # emits ``False`` — both indistinguishable.
+                errors.append(
+                    f"{gen_name}: {file_path} is not a JSON object or array "
+                    f"(got {type(content).__name__})"
+                )
     elif file_path.endswith(".tsv"):
         if isinstance(content, str):
-            lines = content.strip().split("\n")
-            if len(lines) < 1:
+            # ``content.strip().split("\n")`` always yields >= 1 element
+            # (even an empty/whitespace-only string splits to ``[""]``),
+            # so the previous ``len(lines) < 1`` check was dead code and
+            # silently let empty TSVs pass. Detect emptiness *before* the
+            # split on the stripped string so the error path actually
+            # fires for empty files.
+            stripped = content.strip()
+            if not stripped:
                 errors.append(f"{gen_name}: {file_path} is empty")
         else:
             errors.append(f"{gen_name}: {file_path} expected TSV string, got {type(content).__name__}")
@@ -86,14 +139,32 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
 
     if gen_name == "manifest_generator":
         manifest = output.files.get("manifest.json", {})
-        required = ["Format", "UniqueID", "Name", "Version", "ContentPackFor"]
-        for field_name in required:
-            if field_name not in manifest:
-                errors.append(f"manifest_generator: missing required field '{field_name}'")
-        if "ContentPackFor" in manifest:
-            cpf = manifest["ContentPackFor"]
-            if isinstance(cpf, dict) and "UniqueID" not in cpf:
-                errors.append("manifest_generator: ContentPackFor.UniqueID missing")
+        # Guard against non-dict manifest content. The ``field_name not in
+        # manifest`` membership test would raise ``TypeError`` if a generator
+        # emitted an int / list / None for ``manifest.json`` — that crash
+        # would short-circuit the gate and hide the per-field error report
+        # operators need to fix the generator. Surface a clear
+        # type-disclosure error instead, matching the v48 pattern in
+        # ``_validate_file`` and the ``config_schema_generator`` arm below.
+        if not isinstance(manifest, dict):
+            errors.append(
+                f"manifest_generator: manifest.json is not a JSON object "
+                f"(got {type(manifest).__name__})"
+            )
+        else:
+            required = ["Format", "UniqueID", "Name", "Version", "ContentPackFor"]
+            for field_name in required:
+                if field_name not in manifest:
+                    errors.append(f"manifest_generator: missing required field '{field_name}'")
+            # ``ContentPackFor`` membership on a dict is now safe (guarded
+            # above), but keep the inner ``isinstance(cpf, dict)`` check for
+            # forward compatibility — a generator that sets
+            # ``ContentPackFor`` to a list should still get a precise
+            # error, not a TypeError on the nested ``UniqueID`` lookup.
+            if "ContentPackFor" in manifest:
+                cpf = manifest["ContentPackFor"]
+                if isinstance(cpf, dict) and "UniqueID" not in cpf:
+                    errors.append("manifest_generator: ContentPackFor.UniqueID missing")
 
     elif gen_name == "shop_item_pool_generator":
         shops_tsv = output.files.get("assets/data/shops.tsv", "")
@@ -109,12 +180,26 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
 
     elif gen_name == "config_schema_generator":
         config = output.files.get("config.json", {})
-        if "Enabled" not in config:
+        # Guard against non-dict config content. ``"Enabled" not in config``
+        # raises ``TypeError`` on an int / list / None — that crash would
+        # bypass the gate's error reporting. Surface a clear type-disclosure
+        # error instead, matching the v48 pattern in ``_validate_file``.
+        if not isinstance(config, dict):
+            errors.append(
+                f"config_schema_generator: config.json is not a JSON object "
+                f"(got {type(config).__name__})"
+            )
+        elif "Enabled" not in config:
             errors.append("config_schema_generator: config.json missing 'Enabled' field")
 
     elif gen_name == "trigger_logic_generator":
         triggers = output.files.get("data/trigger_actions.json", {})
-        if not triggers:
+        # ``if not triggers`` is permissive — an int 0, empty string, or
+        # None all count as "missing or empty", but a *non-empty* list of
+        # ints would silently pass as "present and well-formed". Require
+        # a non-empty dict so the gate's contract matches the rest of the
+        # JSON-object generators (``manifest_generator``, ``config_schema_generator``).
+        if not isinstance(triggers, dict) or not triggers:
             errors.append("trigger_logic_generator: data/trigger_actions.json missing or empty")
 
     elif gen_name == "mail_system_generator":

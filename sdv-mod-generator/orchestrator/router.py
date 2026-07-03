@@ -7,7 +7,14 @@ from typing import TypedDict
 
 import structlog
 
-logger = structlog.get_logger()
+# Bind a module-level logger so every structlog event carries the
+# fully-qualified module name (``orchestrator.router``) by default.
+# Other modules in this codebase do the same (see ``storage.postgres``
+# ported in round 8); the bare ``structlog.get_logger()`` form (no
+# name argument) was a minor convention drift — addressed in v27
+# Blue for grep consistency. The 7-line comment matches the source's
+# pattern in ``docs/_source_router.py.txt`` lines 10-15.
+logger = structlog.get_logger(__name__)
 
 
 class RoutingHint(TypedDict):
@@ -17,6 +24,18 @@ class RoutingHint(TypedDict):
     generators: list[str]
     execution_order: list[str]
     dependencies: dict[str, list[str]]
+    # v27 Blue: confidence + matched_keyword round-tripped from the
+    # longest-keyword-wins loop so the orchestrator (and the future
+    # ``GET /v1/router/diagnose`` endpoint) can show *why* a prompt
+    # routed to a particular phase. ``confidence`` is 0.0 for the
+    # default fallback (no keyword matched) and 1.0 for matches of
+    # ``~16`` chars or longer (the longest real keyword in the maps).
+    # ``matched_keyword`` is the literal keyword string that won the
+    # longest-match scan, or ``""`` for the default fallback. Both
+    # fields are additive — older callers reading the first 5 keys
+    # are unaffected.
+    confidence: float
+    matched_keyword: str
 
 
 _GAME_KEYWORDS: dict[str, list[str]] = {
@@ -108,12 +127,14 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
     phase_map = _PHASE_BY_KEYWORD.get(game_id, {})
     matched_generators: list[str] = []
     matched_phase: str | None = None
+    matched_keyword: str = ""
     best_keyword_len = 0
 
     for keyword, phase in phase_map.items():
         if keyword in prompt_lower and len(keyword) > best_keyword_len:
             best_keyword_len = len(keyword)
             matched_phase = phase
+            matched_keyword = keyword
 
     # Weather-event priority override: when the prompt contains BOTH a
     # weather keyword (rain/storm/snow/wind/weather/buff) AND the generic
@@ -128,9 +149,32 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
         k in prompt_lower for k in ("rain", "storm", "snow", "wind", "weather", "buff")
     ):
         matched_phase = "weather_event"
+        # ``matched_keyword`` stays as the longest original match
+        # (the ``"event"`` literal) so the v27 confidence / diagnose
+        # surface can render "the route was overridden after a 5-char
+        # 'event' match" rather than the synthetic 12-char
+        # ``"weather_event"`` phase name. The phase changed, the
+        # trigger didn't.
+        matched_keyword = "event"
 
-    if matched_phase is None:
+    is_fallback = matched_phase is None
+    if is_fallback:
         matched_phase = phase_map.get("shop", "shop_channel")
+        matched_keyword = ""
+
+    # v27 Blue: confidence heuristic based on matched keyword length.
+    # The longest real keyword in the maps is ~16 chars ("seasonal
+    # festival", "map edit"); matches that long (or longer) get full
+    # confidence (1.0). Single-word matches (3-4 chars) score low
+    # (0.2-0.25) so the orchestrator can decide whether to ask the
+    # user for clarification. Fallback (no keyword matched) is 0.0.
+    # The 16-char ceiling is intentionally a *floor* of 1.0 — we
+    # cap at 1.0 because no real keyword is longer, but future
+    # longer keywords should not blow past the API contract.
+    if is_fallback or best_keyword_len == 0:
+        confidence: float = 0.0
+    else:
+        confidence = min(1.0, round(best_keyword_len / 16.0, 2))
 
     try:
         from generators.core import get_game_pack
@@ -145,7 +189,18 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
             pg = pack.get_generators(matched_phase)
             matched_generators = pg.execution_order.copy()
     except (ImportError, AttributeError, ValueError, TypeError) as exc:
-        logger.warning("router.pack_fallback", game=game_id, phase=matched_phase, error=str(exc))
+        # v27 Blue: surface ``error_type`` (exception class name) on
+        # the pack-fallback warning so log aggregators can group
+        # router fallbacks by exception class without parsing the
+        # ``error`` string. The string form is preserved for
+        # backwards compatibility with dashboards that grep on it.
+        logger.warning(
+            "router.pack_fallback",
+            game=game_id,
+            phase=matched_phase,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
         matched_generators = _default_generators_for_phase(matched_phase)
 
     hint: RoutingHint = {
@@ -154,12 +209,52 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
         "generators": matched_generators,
         "execution_order": matched_generators,
         "dependencies": {},
+        "confidence": confidence,
+        "matched_keyword": matched_keyword,
     }
-    logger.info("router.routed", game=game_id, phase=matched_phase, generators=matched_generators)
+    logger.info(
+        "router.routed",
+        game=game_id,
+        phase=matched_phase,
+        generators=matched_generators,
+        confidence=confidence,
+        matched_keyword=matched_keyword,
+    )
     return matched_phase, hint
 
 
 def _default_generators_for_phase(phase: str) -> list[str]:
+    """Resolve a phase string to its defence-in-depth generator-name list.
+
+    This is the fallback that :func:`route` consults when the upstream
+    pack-based resolver (``StardewValleyPack.get_generators(phase)``) is
+    unavailable or does not know the phase. Every phase advertised by
+    ``StardewValleyPack.list_phases()`` must have a matching
+    ``if phase == "..."`` arm here, and an UNKNOWN phase (no matching
+    ``if`` arm) returns ``[]`` and emits the
+    ``router.default_generators.unknown`` WARNING so an operator can
+    correlate a downstream "pipeline generated zero files" failure back
+    to the specific phase string that fell through.
+
+    Logging:
+    * Matched phase: no log call here (the matched-phase success path
+      is logged at the :func:`route` call site).
+    * Unknown phase: emits ``router.default_generators.unknown``
+      (WARNING, single ``phase`` snake_case field) immediately before
+      returning ``[]``. WARNING (not INFO) because an unknown phase is
+      always actionable — it indicates either a typo'd phase string or
+      a pack drift (a phase added to the pack without the parallel
+      fallback arm here).
+
+    Mirrors the source's
+    ``docs/_source_router.py.txt`` lines 1594-2450 v99 hardening.
+    Master has only 5 phase arms today; the source has 60+ and a
+    v99 telemetry contract on the silent-fallthrough path. This port
+    keeps master's 5 arms and adds the v99 WARNING contract; the
+    remaining 55+ arms remain out of scope until the corresponding
+    packs land (they each have a pack-registration dependency that
+    the broader P3-P5 stack needs to provide).
+    """
     if phase == "texture":
         return ["texture_generator"]
     if phase == "npc_schedule":
@@ -201,4 +296,19 @@ def _default_generators_for_phase(phase: str) -> list[str]:
             "map_edit_generator",
             "farm_expansion_content_json_generator",
         ]
+    # v22 Blue (port from source v99): unknown-phase silent-failure
+    # gap. The phase did not match any of the ``if phase == "..."``
+    # arms above, so we are about to return an empty list. Emit a
+    # canonical ``router.default_generators.unknown`` WARNING so an
+    # operator can correlate a "pipeline generated zero files"
+    # downstream failure back to the specific phase string that fell
+    # through. The single ``phase`` field is sufficient — the call
+    # site (``route()``) already logs the full routing context
+    # (``router.pack_not_found`` / ``router.phase_not_in_pack`` /
+    # ``router.pack_fallback``) so a log query can pivot off this
+    # WARNING to surface the offending phase. WARNING (not INFO)
+    # because an unknown phase is always actionable — it indicates
+    # either a typo'd phase string or a pack drift (a phase added
+    # to the pack without the parallel fallback arm here).
+    logger.warning("router.default_generators.unknown", phase=phase)
     return []

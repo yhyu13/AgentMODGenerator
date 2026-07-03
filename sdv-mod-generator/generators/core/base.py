@@ -6,7 +6,7 @@ The pipeline orchestrates across packs, but each pack is self-contained.
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import Any, TypedDict
 
 
 @dataclass
@@ -26,7 +26,11 @@ class GeneratorOutput:
 class GeneratorInput(TypedDict):
     """Input passed to a generator."""
     prompt: str
-    hint: dict
+    # v42 Blue: mirror of storage.queries.create_mod_request — the ``hint``
+    # value is serialised through ``ModRequest.hint: Mapped[dict[str, Any]]``
+    # in storage/models/models.py, so the strict shape here matches the
+    # downstream storage contract.
+    hint: dict[str, Any]
     request_id: str
     game: str
     prior_outputs: dict[str, GeneratorOutput]
