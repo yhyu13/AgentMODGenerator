@@ -11,6 +11,7 @@ from quality.gate_t1 import run_t1
 from quality.gate_t2 import run_t2
 from generators.core import get_game_pack
 from orchestrator.feedback_router import FeedbackRouter
+from orchestrator._log_hook import emit_pipeline_log, emit_pipeline_log_async
 from storage.redis import set_status as redis_set_status
 
 logger = structlog.get_logger()
@@ -19,7 +20,11 @@ _feedback_router = FeedbackRouter()
 
 def node_route(state: PipelineState) -> PipelineState:
     """Route prompt to game pack and phase/generators."""
-    logger.info("pipeline.routing", request_id=state.request_id, prompt=state.prompt)
+    # v76 — wire pipeline log capture (structlog + Redis append) for
+    # the read-side ``GET /v1/mods/{id}/logs`` endpoint. The fire-
+    # and-forget pattern keeps the sync node from blocking on Redis.
+    emit_pipeline_log(state.request_id, "info", "pipeline.routing",
+                      prompt=state.prompt)
     try:
         _, hint = route(state.prompt)
         state.game = hint.get("game", "stardew_valley")
@@ -27,15 +32,22 @@ def node_route(state: PipelineState) -> PipelineState:
         state.generators = hint.get("generators", [])
         state.hint = hint
         state.status = "routing"
-        logger.info(
+        emit_pipeline_log(
+            state.request_id,
+            "info",
             "pipeline.routing.done",
-            request_id=state.request_id,
             game=state.game,
             phase=state.phase,
             generators=state.generators,
         )
     except Exception as exc:
-        logger.error("pipeline.routing.failed", request_id=state.request_id, error=str(exc))
+        # v77 — extend pipeline log capture to error-state events so the
+        # ``GET /v1/mods/{id}/logs`` endpoint surfaces failures, not only
+        # the success-path transitions v76 wired.
+        emit_pipeline_log(
+            state.request_id, "error", "pipeline.routing.failed",
+            error=str(exc),
+        )
         state.errors.append(f"routing failed: {exc}")
         state.status = "failed"
         state.game = "stardew_valley"
@@ -47,9 +59,11 @@ def node_route(state: PipelineState) -> PipelineState:
 
 async def node_generate(state: PipelineState) -> PipelineState:
     """Run each generator in execution_order from the game pack."""
-    logger.info(
-        "pipeline.generating",
-        request_id=state.request_id,
+    # v77 — extend pipeline log capture to generation start event so the
+    # ``GET /v1/mods/{id}/logs`` endpoint surfaces the iteration count
+    # and generator list.
+    emit_pipeline_log(
+        state.request_id, "info", "pipeline.generating",
         game=state.game,
         generators=state.generators,
         t2_iterations=state.t2_iterations,
@@ -58,7 +72,11 @@ async def node_generate(state: PipelineState) -> PipelineState:
 
     pack = get_game_pack(state.game)
     if pack is None:
-        logger.error("pipeline.unknown_game", request_id=state.request_id, game=state.game)
+        # v77 — extend pipeline log capture to error-state events.
+        emit_pipeline_log(
+            state.request_id, "error", "pipeline.unknown_game",
+            game=state.game,
+        )
         state.errors.append(f"Unknown game: {state.game}")
         state.status = "failed"
         return state
@@ -70,7 +88,11 @@ async def node_generate(state: PipelineState) -> PipelineState:
     for gen_name in state.generators:
         gen_cls = pack.get_generator(gen_name, state.phase)
         if gen_cls is None:
-            logger.error("pipeline.generator_not_found", request_id=state.request_id, generator=gen_name, game=state.game)
+            # v77 — extend pipeline log capture to error-state events.
+            emit_pipeline_log(
+                state.request_id, "error", "pipeline.generator_not_found",
+                generator=gen_name, game=state.game,
+            )
             state.errors.append(f"Generator not found: {gen_name}")
             state.generators_failed.append(gen_name)
             continue
@@ -97,9 +119,11 @@ async def node_generate(state: PipelineState) -> PipelineState:
                 files=len(output.files),
             )
         except Exception as exc:
-            logger.error(
-                "pipeline.generator_failed",
-                request_id=state.request_id,
+            # v77 — extend pipeline log capture to per-generator failure
+            # events so operators can see WHICH generator blew up via the
+            # ``GET /v1/mods/{id}/logs`` endpoint.
+            emit_pipeline_log(
+                state.request_id, "error", "pipeline.generator_failed",
                 generator=gen_name,
                 error=str(exc),
                 error_type=type(exc).__name__,
@@ -132,18 +156,25 @@ async def node_generate(state: PipelineState) -> PipelineState:
 
 def node_t1_gate(state: PipelineState) -> PipelineState:
     """Run Tier 1 deterministic checks."""
-    logger.info("pipeline.t1_gate", request_id=state.request_id)
+    # v76 — wire pipeline log capture (structlog + Redis append).
+    emit_pipeline_log(state.request_id, "info", "pipeline.t1_gate")
     state.status = "t1_gating"
 
     result = run_t1(state.request_id, state.outputs)
     state.t1_passed = result.passed
 
     if not result.passed:
-        logger.warning("pipeline.t1_gate.failed", request_id=state.request_id, errors=result.errors)
+        # v77 — extend pipeline log capture to T1 gate outcomes.
+        emit_pipeline_log(
+            state.request_id, "warning", "pipeline.t1_gate.failed",
+            errors=result.errors,
+        )
         state.errors.extend(result.errors)
         state.status = "failed"
     else:
-        logger.info("pipeline.t1_gate.passed", request_id=state.request_id)
+        emit_pipeline_log(
+            state.request_id, "info", "pipeline.t1_gate.passed",
+        )
 
     return state
 
@@ -151,7 +182,11 @@ def node_t1_gate(state: PipelineState) -> PipelineState:
 async def node_t2_gate(state: PipelineState) -> PipelineState:
     """Run Tier 2 LLM judge — blocks on failure up to max_t2_iterations."""
     state.t2_iterations += 1
-    logger.info("pipeline.t2_gate", request_id=state.request_id, iteration=state.t2_iterations)
+    # v76 — wire pipeline log capture (structlog + Redis append).
+    emit_pipeline_log(
+        state.request_id, "info", "pipeline.t2_gate",
+        iteration=state.t2_iterations,
+    )
     state.status = "t2_gating"
 
     try:
@@ -170,15 +205,19 @@ async def node_t2_gate(state: PipelineState) -> PipelineState:
             "panel_passed_count": state.t2_panel_passed_count,
         })
     except Exception as exc:
-        logger.warning("pipeline.t2_gate.error", request_id=state.request_id, error=str(exc))
+        # v77 — extend pipeline log capture to T2 gate errors.
+        emit_pipeline_log(
+            state.request_id, "warning", "pipeline.t2_gate.error",
+            error=str(exc),
+        )
         state.t2_passed = True
         state.t2_available = False
         state.t2_score = 0
         state.t2_feedback = f"[T2 judge unavailable: {exc}]"
 
-    logger.info(
-        "pipeline.t2_gate.done",
-        request_id=state.request_id,
+    # v77 — extend pipeline log capture to T2 gate completion event.
+    emit_pipeline_log(
+        state.request_id, "info", "pipeline.t2_gate.done",
         iteration=state.t2_iterations,
         score=state.t2_score,
         passed=state.t2_passed,
@@ -189,7 +228,8 @@ async def node_t2_gate(state: PipelineState) -> PipelineState:
 
 async def node_package(state: PipelineState) -> PipelineState:
     """Package outputs into zip."""
-    logger.info("pipeline.packaging", request_id=state.request_id)
+    # v76 — wire pipeline log capture (structlog + Redis append).
+    emit_pipeline_log(state.request_id, "info", "pipeline.packaging")
     state.status = "packaging"
 
     all_files: dict[str, dict] = {}
@@ -208,13 +248,24 @@ async def node_package(state: PipelineState) -> PipelineState:
         )
         state.zip_key = zip_key
         state.status = "done"
-        logger.info("pipeline.done", request_id=state.request_id, zip_key=zip_key)
+        # v77 — extend pipeline log capture to packaging completion event.
+        emit_pipeline_log(
+            state.request_id, "info", "pipeline.done",
+            zip_key=zip_key,
+        )
     except asyncio.TimeoutError:
-        logger.error("pipeline.packaging_timeout", request_id=state.request_id, timeout=timeout)
+        # v77 — extend pipeline log capture to packaging error paths.
+        emit_pipeline_log(
+            state.request_id, "error", "pipeline.packaging_timeout",
+            timeout=timeout,
+        )
         state.errors.append(f"packaging timed out after {timeout} seconds")
         state.status = "failed"
     except Exception as exc:
-        logger.error("pipeline.packaging_failed", request_id=state.request_id, error=str(exc))
+        emit_pipeline_log(
+            state.request_id, "error", "pipeline.packaging_failed",
+            error=str(exc),
+        )
         state.errors.append(f"packaging failed: {exc}")
         state.status = "failed"
     return state
@@ -307,7 +358,14 @@ async def run_pipeline(request_id: str, user_id: str, prompt: str) -> PipelineSt
         user_id=user_id,
         prompt=prompt,
     )
-    logger.info("pipeline.start", request_id=request_id, user_id=user_id, prompt=prompt)
+    # v76 — wire pipeline log capture (structlog + Redis append).
+    # Use the async variant so the log stream is flushed before
+    # ``run_pipeline`` returns — callers that await this coroutine
+    # get a guarantee that the start event is in the Redis list.
+    await emit_pipeline_log_async(
+        request_id, "info", "pipeline.start",
+        user_id=user_id, prompt=prompt,
+    )
     result_dict = await graph.ainvoke(initial_state)
     return PipelineState(**result_dict)
 
@@ -370,9 +428,11 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
     for gen_name in result.generators_failed:
         record_generator_outcome(gen_name, succeeded=False)
 
-    logger.info(
-        "pipeline.status_updated",
-        request_id=request_id,
+    # v77 — extend pipeline log capture to the post-pipeline status update
+    # so the ``GET /v1/mods/{id}/logs`` endpoint shows the final disposition
+    # alongside every transition.
+    emit_pipeline_log(
+        request_id, "info", "pipeline.status_updated",
         status=result.status,
         zip_key=result.zip_key,
         t2_score=result.t2_score,
@@ -387,8 +447,14 @@ def run_pipeline_background(request_id: str, user_id: str, prompt: str) -> async
 
 async def _run_pipeline_sync(request_id: str, user_id: str, prompt: str) -> None:
     """Async wrapper for use with asyncio.create_task — runs pipeline in background."""
-    logger.info("pipeline.background_started", request_id=request_id)
+    # v77 — extend pipeline log capture to background-task lifecycle events.
+    emit_pipeline_log(
+        request_id, "info", "pipeline.background_started",
+    )
     try:
         await _run_pipeline_and_update_status(request_id, user_id, prompt)
     except Exception as e:
-        logger.error("pipeline.background_error", request_id=request_id, error=str(e))
+        emit_pipeline_log(
+            request_id, "error", "pipeline.background_error",
+            error=str(e),
+        )
