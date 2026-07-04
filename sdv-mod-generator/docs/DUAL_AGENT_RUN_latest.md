@@ -1,9 +1,9 @@
-# Dual-Agent Run 2026-07-03 UTC
+# Dual-Agent Run 2026-07-05 ~14:00 UTC
 
-- tick: cron (file-only direct work)
-- task: (idle — P3-P5 priority list is in steady state)
-- files: none — see "notes" below
-- diff: 0 / 0
-- tests: skipped (file-only mode — parent will verify)
-- pending: no marker
-- notes: Round 1's `orchestrator/feature_flags.py` port (7f1b205) plus the 4 follow-up rounds (set_flag tests, get_pinned tests, clear_history tests, rollback_flag + tests) have completed everything in the merge plan's priority list. The 5 storage query functions from 9487db8 (list/count/stats/delete_old/is_valid_mod_status) are intentionally skipped per the plan ("porting them in isolation creates dead code"). gate_t1.py is already on master with full logic. Storage/postgres.py is on master. No source bundle for unverified test files (commits 11-13 from branch). Remaining branch content (28 new API endpoints, 50+ new generators) is explicitly out of scope for cron extraction — those are multi-hour PRs requiring the parent's interactive session. **Recommendation: retire the cron job.** The next meaningful work is in P3-P5 phase work proper, which requires a focused interactive session per the plan's own analysis. Silent-exit on future ticks is the right behaviour under the strict prompt; this doc is the explicit close-out so the parent knows the idle is intentional, not a failure.
+- tick: cron (file-only direct work, terminal blocked as expected per 2026-07-03 diagnosis)
+- task: **v77 — complete orchestrator log capture wiring (15 remaining sites).** Converts the v76-orphaned `logger.<level>(...)` calls in `orchestrator/pipeline.py` to `emit_pipeline_log(...)` so `GET /v1/mods/{id}/logs` surfaces error states too (routing.failed, unknown_game, generator_not_found, generator_failed, generating, t1_gate.{failed,passed}, t2_gate.{error,done}, packaging done, packaging_timeout, packaging_failed, status_updated, background_started, background_error). After this round, ALL 20 operator-visible orchestrator log emits are routed through the v75/v76 Redis stream. The 1 remaining unconverted site is `pipeline.generator_done` (per-generator success, intentionally left as structlog-only to avoid N×Redis spam).
+- files: orchestrator/pipeline.py (+47 net, 412→459), docs/PENDING_COMMIT_v77.md (NEW)
+- diff: +47 / -0 lines net (well under the 200-line cron cap)
+- tests: skipped (file-only mode — parent will `pytest tests/test_pipeline_integration.py -q` and `pytest tests/ -q`; v77 is pure emission, no logic touched)
+- pending: docs/PENDING_COMMIT_v77.md
+- next: v78 options — (a) update `docs/P3_P5_EXTRACTION_SCHEDULE.md` to mark all 5 sessions DONE + reflect current master (38 route handlers, full log-capture wiring); (b) add `/v1/mods/{id}/logs` integration test (reuses v75 test infra); (c) start Session 6 (generators — parent-session work, generators are 500-1500 lines each); (d) restore missing `app/estimation.py` from discord-ops-hardening branch so Session 2's 4 estimation endpoints become runtime-live (Session 2 was marked PARTIALLY DONE in the schedule, awaiting this restore). **Parent note:** v76's `tests/test_pipeline_log_hook.py` is missing from disk (only `__pycache__` exists) — surfaced in PENDING_COMMIT_v77.md notes; parent should decide whether to revert v76 and recreate, or accept v76 as shipped-without-coverage.
