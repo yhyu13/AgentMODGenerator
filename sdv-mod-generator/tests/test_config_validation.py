@@ -10,15 +10,22 @@ def test_validate_config_defaults_passes() -> None:
 
 
 def test_validate_config_rejects_high_t2_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """max_t2_iterations outside 0-2 fails validation."""
-    import orchestrator.state
+    """max_t2_iterations outside 0-2 fails validation.
+
+    v109+: ``validate_config`` reads from ``Config.max_t2_iterations``
+    (the config singleton), not from a constructed ``PipelineState``.
+    Patch the config singleton's ``max_t2_iterations`` field via
+    ``monkeypatch.setattr`` on a fake returned by ``get_config``.
+    """
+    import app.config as cfg_mod
     from app.config import validate_config
 
-    class FakeState:
-        def __init__(self, **kwargs: object) -> None:
-            self.max_t2_iterations = 3
+    class FakeCfg:
+        max_t2_iterations = 3
+        zip_output_timeout = 120
+        log_level = "INFO"
 
-    monkeypatch.setattr(orchestrator.state, "PipelineState", FakeState)
+    monkeypatch.setattr(cfg_mod, "get_config", lambda: FakeCfg())
 
     with pytest.raises(RuntimeError, match="max_t2_iterations must be between 0 and 2"):
         validate_config()

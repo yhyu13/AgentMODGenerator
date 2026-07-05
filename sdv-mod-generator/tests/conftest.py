@@ -20,6 +20,33 @@ def _isolate_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "DISCORD_BOT_TOKEN",
+        # v111 — clear the new env-var targets of the
+        # ``discord_app_id_valid`` and ``api_key_configured`` bool
+        # wrappers so the v111 "unset is False" tests reach their
+        # ``False`` default deterministically across hosts (e.g.
+        # a developer with a real ``API_KEY`` in their local
+        # ``.env`` would otherwise see ``api_key_configured is True``
+        # in the unset-default test). Same pattern as the
+        # pre-existing ``DISCORD_BOT_TOKEN`` entry — the v110
+        # ``discord_bot_configured`` tests rely on that one. The
+        # v111 tests do belt-and-suspenders ``monkeypatch.delenv``
+        # inside each test so the conftest addition is purely a
+        # safety net (the in-test delenv is the primary defense).
+        "DISCORD_APP_ID",
+        "API_KEY",
+        # v113 — clear the new env-var target of the
+        # ``api_owner_configured`` bool wrapper so the v113
+        # "unset is False" test reaches its ``False`` default
+        # deterministically across hosts (e.g. a developer with
+        # a real ``API_OWNER_USER_ID`` in their local ``.env``
+        # would otherwise see ``api_owner_configured is True`` in
+        # the unset-default test). Same pattern as the v110 +
+        # v111 conftest entries above for ``DISCORD_BOT_TOKEN``,
+        # ``DISCORD_APP_ID``, and ``API_KEY``. The v113 tests do
+        # belt-and-suspenders ``monkeypatch.delenv`` inside each
+        # test so the conftest addition is purely a safety net
+        # (the in-test delenv is the primary defense).
+        "API_OWNER_USER_ID",
         "ALL_PROXY",
         "all_proxy",
     ):
