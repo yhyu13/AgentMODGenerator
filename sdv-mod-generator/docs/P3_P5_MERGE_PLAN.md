@@ -1,10 +1,69 @@
 # P3-P5 Merge Plan: extracting value from discord-ops-hardening
 
-## Current state (as of 2026-07-03, end of session)
+## Current state (as of 2026-07-05, end of session)
 
-- `master` at 7f1b205, 312/312 tests pass, pushed to origin
-- `discord-ops-hardening` at dfb3dd7, untouched in this session (still has the 18 commits with cron noise)
-- `dual-agent-continuous` cron job (id `8faa6346fe1e`) confirmed working in file-only mode. Round 1 already shipped `orchestrator/feature_flags.py` (107 lines, cleanroom port) and `docs/PENDING_COMMIT_v1.md` (consumed by parent at 7f1b205). Next run 2026-07-03 ~07:41 UTC+8. The prompt now instructs the cron to do work directly (no subagent delegation) using pre-staged source bundles at `sdv-mod-generator/docs/_source_*.py.txt`.
+- `master` at 3d18c01, 605/605 tests pass, pushed to origin
+- `discord-ops-hardening` at dfb3dd7, kept as reference
+- `dual-agent-continuous` cron job (id `8faa6346fe1e`) **paused** after
+  113 productive rounds over 3 days. The cron shipped all 5 sessions
+  of the P3-P5 extraction plan plus 38 additional observability/P5
+  rounds. The cron's own `docs/SESSION_6_PROPOSAL.md` lays out the
+  next phase (Session 6: 5-10 of the 50+ new feature generators).
+  The cron is paused because Session 6 generators are 500-1500 lines
+  each, way over the cron's 200-line cap, and require parent-session
+  work to port and verify.
+
+### Cron total productivity (113 rounds over 3 days)
+
+| Date | Rounds | Round range | What |
+|------|--------|-------------|------|
+| 2026-07-03 | 22 | v1-v22 | Session 0: feature_flags, gate_t1, postgres, queries, base, status_validation (file-only mode v1, with source bundles staged by parent) |
+| 2026-07-04 | 53 | v23-v76 | Sessions 1-5: 20 new endpoints, orchestrator log capture wiring, schemas, queries |
+| 2026-07-05 | 38 | v77-v114 | Post-sessions: P5 observability (bool-wrapper Config fields, lifespan WARNINGs, orchestrator state rewrite, app/estimation.py restore) |
+| **Total** | **113** | | ~10,000 lines of new prod code, ~2,000 lines of new test code, 3 archives (~7,200 lines of PENDING_COMMIT marker consolidation) |
+
+### Pre-work for Session 6 (parent session, next time you come back)
+
+The cron's `docs/SESSION_6_PROPOSAL.md` provides the plan. To start:
+
+1. Stage the first source bundle (the cron recommended `weather_event`):
+   ```bash
+   cd /home/hangyu5/Documents/Gitrepo-My/AMG
+   git show discord-ops-hardening:sdv-mod-generator/generators/packs/stardew_valley/features/weather_event/__init__.py \
+     > sdv-mod-generator/docs/_source_weather_event.py.txt
+   git add sdv-mod-generator/docs/_source_weather_event.py.txt
+   git commit -m "chore(docs): pre-stage weather_event bundle for Session 6 v88"
+   git push origin master
+   ```
+
+2. Run the first generator port as a focused parent session (4-6 files
+   per generator: the generator + 3 sibling edits to register the
+   phase in the orchestrator + tests). The cron's proposal breaks
+   5 generators into 11 rounds, each fitting in 1-2 hours.
+
+3. If you want the cron to do small follow-up rounds after the
+   parent-session work (e.g. test additions, doc updates, minor
+   refactors), resume with:
+   ```bash
+   cronjob action=resume job_id=8faa6346fe1e
+   ```
+
+### What remains to extract from the branch
+
+The branch is now ~95% drained. Remaining:
+
+- **Session 6 (parent-session, this week):** 5-10 of the 50+ new
+  feature generators. Per the cron's SESSION_6_PROPOSAL, this is
+  ~4 days of parent-session work broken into 11 cron-sized rounds
+  for the post-port cleanup. The first generator (weather_event)
+  is 330 lines + 3 sibling edits.
+- **Sessions 7+ (optional, if you want more generators):** the
+  remaining 40+ generators. Each is 500-1500 lines, requires the
+  same 4-6 file change as Session 6.
+
+After Session 6, the branch is effectively drained. Delete
+`discord-ops-hardening` (local-only, no remote ref).
+
 
 ### Cron round 1 (verified shipped, 7f1b205)
 - **File produced:** `sdv-mod-generator/orchestrator/feature_flags.py` (107 lines)
