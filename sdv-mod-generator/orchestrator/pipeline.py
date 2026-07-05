@@ -353,10 +353,25 @@ def get_graph() -> StateGraph:
 async def run_pipeline(request_id: str, user_id: str, prompt: str) -> PipelineState:
     """Run the full pipeline."""
     graph = get_graph()
+    # v109 — wire ``Config.max_t2_iterations`` (parsed from
+    # ``MAX_T2_ITERATIONS``) into the constructed ``PipelineState``.
+    # Pre-v109 the field defaulted to ``0`` and was never set
+    # anywhere in production, so the T2 retry loop guard
+    # (``if state.t2_iterations < state.max_t2_iterations``) was
+    # always False on the first iteration — T2 ran once and shipped.
+    # Operators can now opt in to T2 retries via
+    # ``MAX_T2_ITERATIONS=N`` (1 or 2) in their env. Imported
+    # lazily inside the function to preserve the existing
+    # lazy-import convention used by every other ``app.*`` dep
+    # in this module (``get_config`` is already pulled in lazily
+    # by ``node_package`` at line 241).
+    from app.config import get_config
+
     initial_state = PipelineState(
         request_id=request_id,
         user_id=user_id,
         prompt=prompt,
+        max_t2_iterations=get_config().max_t2_iterations,
     )
     # v76 — wire pipeline log capture (structlog + Redis append).
     # Use the async variant so the log stream is flushed before

@@ -63,6 +63,8 @@ from app.api.schemas import (
     PhaseDetailResponse,
     LogEntry,
     ModLogsResponse,
+    PurgeRequest,
+    PurgeResponse,
 )
 from storage.queries import (
     create_mod_request,
@@ -71,6 +73,7 @@ from storage.queries import (
     get_mod_request_stats,
     list_mod_requests,
     count_mod_requests,
+    delete_old_mod_requests,
 )
 
 # Canonical set of cancellation reason ids. Mirrors
@@ -182,6 +185,182 @@ async def generate_mod_batch(req: BatchGenerateRequest) -> BatchGenerateResponse
     return BatchGenerateResponse(batch_id=batch_id, items=items)
 
 
+@router.post(
+    "/mods/purge",
+    response_model=PurgeResponse,
+    dependencies=[Depends(verify_api_key)],
+)
+async def purge_old_mods(body: PurgeRequest) -> PurgeResponse:
+    """Bulk-delete old mod requests and their Redis state.
+
+    v106 Blue (Feature 4 — purge_old_mods admin command; companion
+    to the v104 ``PurgeRequest`` + ``PurgeResponse`` Pydantic models
+    and the v105 ``delete_old_mod_requests`` SQL helper). Three
+    layers of guard, evaluated in this order:
+
+    1. ``Depends(verify_api_key)`` enforces the ``X-API-Key`` header
+       when one is configured (the same gate used by
+       ``GET /v1/users/{id}/history``).
+    2. ``ADMIN_PURGE_ENABLED`` env var — the destructiveness of this
+       endpoint means it must only be available when the operator
+       has explicitly opted in via the env var (default ``False``).
+       The flag is read from ``cfg.admin_purge_enabled`` (the
+       ``Config`` dataclass field added in v107 — promoted from the
+       inline ``os.getenv(...)`` that v106 used, so the parsing
+       vocabulary now lives in one place alongside the other
+       ``Config`` fields). When the flag is off, we return
+       ``403 Forbidden`` with a clear detail message so a
+       misconfigured client sees why the call failed rather than
+       getting a silent no-op.
+    3. Pydantic-validated ``body.days`` (``1 <= days <= 365``) —
+       bad values are rejected with 422 BEFORE this handler runs,
+       so the SQL helper's ``days < 1`` short-circuit is the
+       defence-in-depth for internal callers, not a primary guard.
+
+    On success the endpoint deletes every ``mod_requests`` row
+    older than ``body.days`` and best-effort removes the matching
+    Redis keys for each id. Redis errors are logged at WARNING and
+    swallowed — the SQL row is the source of truth, and a stale
+    Redis key will simply expire on its normal TTL. The Redis
+    cleanup loop also absorbs ``ImportError`` gracefully: if the
+    three ``storage.redis.delete_*`` cleanup helpers are not yet
+    present on master (they live on the discord-ops-hardening
+    branch), the SQL purge still completes and the absence is
+    logged once at WARNING so operators know the Redis keys will
+    TTL out on their own.
+
+    **Route ordering.** Registered BEFORE ``/mods/status/{request_id}``
+    and BEFORE the generic ``/mods/{request_id}`` pattern so
+    FastAPI's path matcher resolves the static ``/mods/purge``
+    segment first. The same defensive ordering used by
+    ``/mods/stats``, ``/mods/cancel/{request_id}``, and
+    ``/mods/{request_id}/retry`` elsewhere in this module.
+
+    Args:
+        body: :class:`PurgeRequest` carrying the ``days`` window
+            (``1..365``). Out-of-range values are rejected with
+            422 by Pydantic before this function runs.
+
+    Returns:
+        PurgeResponse: ``days`` echoed back, plus ``deleted_count``
+        and a sample of up to 50 ``deleted_request_ids`` for audit
+        (the full list can be inferred from ``deleted_count`` —
+        capping the response envelope prevents a multi-thousand-row
+        purge from blowing the response body).
+
+    Emits:
+        ``api.purge.disabled`` (WARNING) when ``ADMIN_PURGE_ENABLED``
+        is off. ``api.purge.redis_cleanup_done`` (INFO) after the
+        Redis cleanup loop. ``api.purge.redis_cleanup_failed``
+        (WARNING) per Redis helper error.
+        ``api.purge.redis_helpers_missing`` (WARNING) once if the
+        three ``storage.redis.delete_*`` helpers are not yet on
+        master. ``api.purge.done`` (INFO) on success.
+    """
+    # Guard 2 — admin env gate. Read via ``cfg.admin_purge_enabled``
+    # so the flag is part of the ``Config`` dataclass (v107 promoted
+    # the inline ``os.getenv`` to ``app/config.py`` for consistency
+    # with the other ``Config`` fields). The default ``False`` plus
+    # truthy parser (``1`` / ``true`` / ``yes`` case-insensitive)
+    # is identical to the v106 inline behavior, so existing callers
+    # and the v106 test matrix (``test_purge_disabled_falsy_strings``,
+    # ``test_purge_enabled_truthy_strings``) continue to pass without
+    # code changes — only the env-var source moves from
+    # ``os.getenv`` to the singleton ``Config`` instance.
+    from app.config import get_config
+
+    cfg = get_config()
+    if not cfg.admin_purge_enabled:
+        logger.warning(
+            "api.purge.disabled",
+            days=body.days,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Admin purge is disabled. Set ADMIN_PURGE_ENABLED=true "
+                "to enable this endpoint."
+            ),
+        )
+
+    deleted_ids = await delete_old_mod_requests(days=body.days)
+
+    # Best-effort Redis cleanup. A transient Redis error here is
+    # non-fatal — the SQL row is the source of truth, and a stale
+    # Redis key will expire on its own TTL. We mirror the
+    # cancel-reason graceful-degrade pattern from cancel_mod (v45).
+    if deleted_ids:
+        await _cleanup_redis_for_purge(deleted_ids)
+
+    logger.info(
+        "api.purge.done",
+        days=body.days,
+        deleted_count=len(deleted_ids),
+    )
+    # Surface a sample (not the full list) of ids in the response.
+    # A multi-thousand-row purge would blow the response envelope;
+    # operators can still see the true count via deleted_count.
+    sample_size = min(50, len(deleted_ids))
+    return PurgeResponse(
+        days=body.days,
+        deleted_count=len(deleted_ids),
+        deleted_request_ids=deleted_ids[:sample_size],
+    )
+
+
+async def _cleanup_redis_for_purge(deleted_ids: list[str]) -> None:
+    """Best-effort Redis cleanup for ``purge_old_mods``.
+
+    v106 Blue — extracted from the main handler so Pyright sees
+    a clean scope for the deferred-import. The three
+    ``storage.redis.delete_*`` helpers live on the
+    discord-ops-hardening branch and may not yet be on master;
+    if they're missing we log once at WARNING and let the SQL
+    row deletion stand as the source of truth (the stale Redis
+    keys will TTL out on their own).
+    """
+    try:
+        from storage.redis import (
+            delete_pipeline_state,
+            delete_cancellation_reason,
+            delete_notification_target,
+        )
+    except ImportError:
+        logger.warning(
+            "api.purge.redis_helpers_missing",
+            ids_count=len(deleted_ids),
+        )
+        return
+
+    redis_cleaned = 0
+    for rid in deleted_ids:
+        for helper in (
+            delete_pipeline_state,
+            delete_cancellation_reason,
+            delete_notification_target,
+        ):
+            try:
+                await helper(rid)
+                redis_cleaned += 1
+            except (
+                ConnectionError,
+                asyncio.TimeoutError,
+                RuntimeError,
+            ) as exc:
+                logger.warning(
+                    "api.purge.redis_cleanup_failed",
+                    request_id=rid,
+                    helper=helper.__name__,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+    logger.info(
+        "api.purge.redis_cleanup_done",
+        ids_count=len(deleted_ids),
+        redis_cleaned=redis_cleaned,
+    )
+
+
 @router.get("/mods/status/{request_id}")
 async def get_mod_status_check(request_id: str) -> dict:
     """Get current status from Redis cache."""
@@ -231,13 +410,18 @@ async def retry_mod(
     (the same defensive pattern used by
     ``/mods/cancel/{request_id}``).
     """
-    import os
+    from app.config import get_config
+
+    cfg = get_config()
 
     # Guard 1 — env gate. Default ``false`` in test/dev; the
-    # conftest autouse fixture unsets this env var (see
-    # ``tests/conftest.py``) so the default-off path is the
-    # observed default in tests.
-    if os.getenv("RETRY_ENABLED", "false").lower() != "true":
+    # ``Config.retry_enabled`` dataclass field is parsed from the
+    # ``RETRY_ENABLED`` env var via the same truthy parser as
+    # ``Config.admin_purge_enabled`` (``1`` / ``true`` / ``yes``
+    # case-insensitive, see ``app/config.py``). v108 promoted the
+    # parse out of the handler so the operator-facing vocabulary
+    # is uniform across admin gates.
+    if not cfg.retry_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Retry endpoint is disabled (RETRY_ENABLED != true)",
@@ -262,11 +446,12 @@ async def retry_mod(
 
     redis = await _get_redis()
     counter_key = f"retry_counter:{x_user_id}"
-    max_retries_raw = os.getenv("RETRY_MAX_PER_USER_PER_DAY", "5")
-    try:
-        max_retries = int(max_retries_raw)
-    except ValueError:
-        max_retries = 5
+    # ``Config.retry_max_per_user_per_day`` is parsed via ``_safe_int``
+    # so malformed env values (non-numeric, floats, empty string)
+    # fall back to the configured default — same graceful-degrade
+    # pattern as ``zip_output_timeout``. v108 supersedes the v53
+    # inline ``try/except ValueError -> 5`` fallback in the handler.
+    max_retries = cfg.retry_max_per_user_per_day
     remaining = await redis.decr(counter_key)
     if remaining < 0:
         # Race-safe restoration — restore the counter to 0 so

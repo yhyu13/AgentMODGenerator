@@ -420,3 +420,76 @@ async def get_mod_request_stats() -> dict[str, Any]:
         "by_status": by_status,
         "by_phase": by_phase,
     }
+
+
+async def delete_old_mod_requests(days: int) -> list[str]:
+    """Delete ``mod_requests`` rows older than ``days`` and return their ids.
+
+    v105 Blue (Feature 4 — purge_old_mods admin command; companion to
+    the v104 ``PurgeRequest`` + ``PurgeResponse`` Pydantic models). Thin
+    wrapper around a single ``DELETE ... RETURNING`` statement so the
+    HTTP ``POST /v1/mods/purge`` endpoint and a future Discord
+    ``/purge`` command share one implementation. The matching
+    ``mod_outputs`` rows (if any) are removed in the same transaction
+    by relying on the existing ``ON DELETE CASCADE`` foreign key
+    declared in :mod:`storage.models` — this helper does not need to
+    issue a second DELETE against ``mod_outputs``.
+
+    The function does NOT touch Redis state. The route and Discord
+    caller are responsible for calling
+    :func:`storage.redis.delete_pipeline_state` (and friends) for
+    each id this helper returns, so a single purge operation cleans
+    up both the SQL row and its Redis keys. The two-step design is
+    intentional: the DB and Redis calls can fail independently, and
+    the route layer can decide whether to surface a partial-cleanup
+    error or absorb it (it absorbs it, mirroring the v45
+    cancel-reason graceful-degrade pattern).
+
+    Args:
+        days: Minimum age in days. Rows with ``created_at`` older
+            than ``NOW() - INTERVAL 'days days'`` are deleted. Must
+            be ``>= 1``; the route layer enforces
+            ``1 <= days <= 365`` via Pydantic, so this helper does
+            not re-validate but will return an empty list for
+            ``days <= 0`` to keep internal callers (tests) safe.
+
+    Returns:
+        list[str]: The ``request_id`` of every row that was
+        deleted. Empty list when no rows match (the common case on a
+        healthy system — the operator can tell at a glance whether
+        the purge actually removed anything without having to query
+        the table afterwards).
+
+    Emits:
+        storage.queries.delete_old_mod_requests (INFO) with
+        ``days`` and ``deleted_count`` so operators can audit purge
+        operations from the log stream.
+
+    Note:
+        This is a destructive, irreversible operation. The
+        :mod:`app.api.routes` ``POST /v1/mods/purge`` endpoint gates
+        this helper behind the ``ADMIN_PURGE_ENABLED`` flag (default
+        ``False``) plus :func:`app.api.routes.verify_api_key`, so it
+        cannot be triggered accidentally from a public surface.
+    """
+    if days < 1:
+        return []
+    async with get_session() as session:
+        result = await session.execute(
+            text(
+                """
+                DELETE FROM mod_requests
+                WHERE created_at < NOW() - (:days || ' days')::interval
+                RETURNING request_id
+                """
+            ),
+            {"days": int(days)},
+        )
+        rows = result.fetchall()
+    deleted_ids: list[str] = [row.request_id for row in rows]
+    logger.info(
+        "storage.queries.delete_old_mod_requests",
+        days=days,
+        deleted_count=len(deleted_ids),
+    )
+    return deleted_ids

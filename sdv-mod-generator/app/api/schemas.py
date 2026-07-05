@@ -2104,3 +2104,83 @@ class ModLogsResponse(BaseModel):
             "``entries`` is non-empty."
         ),
     )
+
+
+class PurgeRequest(BaseModel):
+    """Request body for ``POST /v1/mods/purge``.
+
+    v104 Red (Feature — purge_old_mods admin command).
+    Foundations-only port of the branch's schema; the actual
+    ``POST /v1/mods/purge`` endpoint, the
+    :func:`storage.queries.delete_old_mod_requests` SQL helper,
+    and the three ``storage.redis`` delete helpers will land in
+    subsequent rounds. This round ships the Pydantic contract
+    so a client SDK can be built against the wire shape today.
+
+    The ``days`` field is bounded ``1..365`` so an operator
+    cannot accidentally nuke everything by sending ``0`` (which
+    the Pydantic ``ge=1`` validator turns into a 422 before
+    the handler runs) or by sending ``100000`` (capped at the
+    upper bound for the same reason). The cap is intentionally
+    generous — a year of history is a plausible operator sweep
+    — but stops well short of a "drop the whole table" footgun.
+
+    The endpoint is intended to be gated by
+    :func:`app.api.routes.verify_api_key` AND the
+    ``ADMIN_PURGE_ENABLED`` env flag, so the body itself
+    carries no auth — it is purely a parameter object. The
+    gating lives at the route layer (v105+ rounds), not here.
+    """
+
+    days: int = Field(
+        ge=1,
+        le=365,
+        description=(
+            "Delete ``mod_requests`` rows (and their Redis state) "
+            "older than this many days. 1..365 inclusive. Out-of-"
+            "range values are rejected with 422 by Pydantic before "
+            "the handler runs."
+        ),
+    )
+
+
+class PurgeResponse(BaseModel):
+    """Response envelope for ``POST /v1/mods/purge``.
+
+    v104 Red (Feature — purge_old_mods admin command).
+    Foundations-only port of the branch's response schema;
+    pairs with :class:`PurgeRequest` and the future
+    ``delete_old_mod_requests`` SQL helper.
+
+    Echoes back the ``days`` window that was applied plus the
+    actual ``deleted_count`` so an operator can verify the
+    operation without re-querying the database.
+    ``deleted_request_ids`` is intentionally limited to a small
+    window of recent ids (the full list could be very large) —
+    if an operator needs the exhaustive list, the SQL helper
+    ``storage.queries.delete_old_mod_requests`` will return it
+    for direct use in scripts; the HTTP response only surfaces
+    a preview.
+    """
+
+    days: int = Field(
+        ge=1,
+        le=365,
+        description="Echo of the request ``days`` window that was applied.",
+    )
+    deleted_count: int = Field(
+        ge=0,
+        description=(
+            "Number of ``mod_requests`` rows that were deleted. "
+            "Zero is a valid, healthy response — it just means "
+            "no rows matched the window."
+        ),
+    )
+    deleted_request_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Sample of the request_ids that were deleted. For "
+            "audit purposes; a large purge will still report the "
+            "true count via ``deleted_count``."
+        ),
+    )
