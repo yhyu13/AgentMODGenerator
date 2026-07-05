@@ -296,6 +296,14 @@ def _default_generators_for_phase(phase: str) -> list[str]:
             "map_edit_generator",
             "farm_expansion_content_json_generator",
         ]
+    if phase == "weather_event":
+        return [
+            "weather_event_generator",
+            "weather_npc_dialogue_generator",
+            "weather_buff_generator",
+            "weather_mail_generator",
+            "weather_content_json_generator",
+        ]
     # v22 Blue (port from source v99): unknown-phase silent-failure
     # gap. The phase did not match any of the ``if phase == "..."``
     # arms above, so we are about to return an empty list. Emit a

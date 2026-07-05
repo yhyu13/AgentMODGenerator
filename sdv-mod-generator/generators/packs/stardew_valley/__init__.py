@@ -50,13 +50,20 @@ from generators.packs.stardew_valley.features.farm_expansion import (
     MapEditGenerator,
     FarmExpansionContentJsonGenerator,
 )
+from generators.packs.stardew_valley.features.weather_event import (
+    WeatherEventGenerator,
+    WeatherNPCDialogueGenerator,
+    WeatherBuffGenerator,
+    WeatherMailGenerator,
+    WeatherContentJsonGenerator,
+)
 
 _PKGDIR = Path(__file__).parent
 _MANIFEST = GameManifest(
     game_id="stardew_valley",
     display_name="Stardew Valley",
     mod_format="ContentPatcher",
-    supported_phases=["shop_channel", "texture", "npc_schedule", "event_mod", "custom_crafting", "farm_expansion"],
+    supported_phases=["shop_channel", "texture", "npc_schedule", "event_mod", "custom_crafting", "farm_expansion", "weather_event"],
     knowledge_dir=_PKGDIR / "knowledge",
 )
 
@@ -182,6 +189,25 @@ class StardewValleyPack(GamePack):
                     "warp_point_generator",
                     "map_edit_generator",
                     "farm_expansion_content_json_generator",
+                ],
+            )
+        if phase == "weather_event":
+            gens = [
+                WeatherEventGenerator,
+                WeatherNPCDialogueGenerator,
+                WeatherBuffGenerator,
+                WeatherMailGenerator,
+                WeatherContentJsonGenerator,
+            ]
+            return PhaseGenerators(
+                phase=phase,
+                generators=gens,
+                execution_order=[
+                    "weather_event_generator",
+                    "weather_npc_dialogue_generator",
+                    "weather_buff_generator",
+                    "weather_mail_generator",
+                    "weather_content_json_generator",
                 ],
             )
         raise ValueError(f"Unknown phase for stardew_valley: {phase}")
