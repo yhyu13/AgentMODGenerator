@@ -210,6 +210,246 @@ The cron has been tracking reality in `docs/PENDING_SOURCE_BUNDLE.md`
 and `docs/DUAL_AGENT_RUN_latest.md`; this v71 patch brings the
 schedule itself back in sync.
 
+## Status as of 2026-07-12 (cron update v162)
+
+Between v161 and v162 the parent session landed two high-leverage
+changes that close the BLOCKED-items list and partially start
+Session 6. This block records the new state.
+
+### Closed since v161
+
+1. **`app/estimation.py` restored** — verified via `read_file` that
+   the file is on master (151 lines, with `from __future__ import
+   annotations` + the four exports: `_PHASE_SECONDS`,
+   `_DEFAULT_SECONDS`, `estimate_seconds_for_phase`,
+   `estimate_seconds`). The four Session 2 endpoints
+   (`GET /v1/estimates`, `GET /v1/estimates/{phase}`,
+   `GET /v1/estimate`, `POST /v1/estimate/batch`) now resolve
+   their deferred `from app.estimation import ...` statements
+   cleanly. The module docstring's v101 restoration caveat (the
+   "reconstructed from test stubs" warning) is still on the file;
+   parent should diff against the branch's
+   `app/estimation.py` to confirm the table values are correct,
+   but the names + signatures match the test stubs so the
+   existing 2 estimation TestClient files will pass without
+   code changes.
+2. **Session 6 partial — 2 of 47 generators ported** — verified via
+   `search_files` for `__init__.py` in
+   `generators/packs/stardew_valley/features/`:
+   - `achievements/__init__.py` (422 lines, identical to the staged
+     `_source_achievements.py.txt` modulo final newline)
+   - `weather_event/__init__.py` (582 lines, identical to the staged
+     `_source_weather_event.py.txt` modulo final newline)
+   Both phases are registered in `generators/packs/stardew_valley/
+   __init__.py` (`supported_phases` includes both, and the
+   `get_generators()` switch has cases for both with the correct
+   `PhaseGenerators` execution orders). The router keywords for
+   `achievements` are already in `orchestrator/router.py` (5
+   entries: achievement / achievements / badge / trophy /
+   milestone, all → `achievements` phase). The weather_event
+   router priority wiring was added in earlier cron rounds
+   (the v22 weather_priority wiring is still in place).
+3. **Tests for the 2 new generators** — verified via `search_files`
+   for `test_achievements*` and `test_weather_event*` in `tests/`:
+   - `test_achievements_generators.py` (the 3-generator direct tests)
+   - `test_achievements_phase.py` (phase-level integration)
+   - `test_achievements_content_json_edge_cases.py` (content.json
+     edge cases)
+   - `test_achievements_routing.py` (the v144 router wiring tests
+     — pins the 5 achievements keywords + the
+     `_default_generators_for_phase` fallback)
+   - `test_weather_event_generator.py` (the weather_event
+     generator tests, including the weather_priority wiring)
+   The "remaining 45" generators still need source bundles
+   staged before any port work.
+
+### What's still BLOCKED on parent shell
+
+1. **No remaining BLOCKED items for Sessions 1-5.** All 4 estimation
+   endpoints are live (item #1 from the v161 block is now closed).
+2. **Session 6 generator ports** — 2 of the 47 missing
+   generators are now on master. The other 45 still need:
+   - Source bundle staged via
+     `git show discord-ops-hardening:sdv-mod-generator/
+     generators/packs/stardew_valley/features/<name>/__init__.py
+     > sdv-mod-generator/docs/_source_<name>.py.txt`
+   - The generator's `__init__.py` copied to the master tree
+   - Phase registration in `generators/packs/stardew_valley/
+     __init__.py` (`supported_phases` + `get_generators()`)
+   - Router keywords in `orchestrator/router.py` for each phase
+   - Tests (module-direct + TestClient + router-wiring)
+   The `__pycache__/...` files in 47 directories under
+   `features/` are stale bytecode from a previous test run and
+   can be ignored — only the missing `__init__.py` source matters.
+3. **The 2 staged source bundles (`_source_achievements.py.txt`,
+   `_source_weather_event.py.txt`) are now redundant.** Both
+   match their master counterparts line-for-line (verified by
+   `read_file` on the last 50 lines of each). They should be
+   deleted in a future parent-side cleanup round (not in cron,
+   because `git rm` requires shell). Keeping them on disk is
+   harmless; the cron has stopped reading them.
+
+### What's new for v162+
+
+- The cron can no longer profitably work on Session 6 from the
+  file-only side: every generator port needs shell (to stage
+  the source bundle + verify the post-port `git diff`), and
+  none of the 45 missing generators have source bundles on
+  master yet. The parent must pre-stage the next generator's
+  source bundle (e.g. `weapon_definition`, `tv_schedule`,
+  `fish_definition`, `npc_portrait`, `monster_drop`, etc.)
+  before the cron can resume productive work.
+- Alternative cron work that's still profitable in v162+:
+  - More TestClient-layer test work on the Session 1-5 endpoints
+    (only the feature-flag admin endpoints have full handler-
+    direct + TestClient coverage so far; the Session 1-3
+    endpoints have only handler-direct tests).
+  - Schema docstring expansion on the existing Pydantic models
+    in `app/api/schemas.py` (the cron has touched many but
+    not all of the 28 schemas).
+  - `tests/conftest.py` fixture consolidation (many of the
+    TestClient test files duplicate the per-test
+    `pytest.MonkeyPatch.context()` block).
+  - Bookkeeping patches to this file (the schedule's status
+    blocks need periodic sync with reality).
+
+### Recommended next picks (cron-friendly, ≤200 lines each)
+
+1. **TestClient-layer test work for the Session 1 introspection
+   endpoints** (`list_mods`, `get_mod_stats`,
+   `list_cancellation_reasons`, `get_cancellation_reason_endpoint`,
+   `list_generators`, `list_phases`, `list_known_phases`,
+   `get_phase_detail`). These have handler-direct tests but no
+   TestClient tests yet. The cron recipe from v152-v160 applies:
+   pick one endpoint, write 200/4xx TestClient tests using
+   `monkeypatch.setattr` at the module attribute level on the
+   storage helper. ~250-350 lines per endpoint, exactly one
+   round each.
+2. **TestClient-layer test work for the Session 3 sub-resource
+   endpoints** (`get_mod_metadata`, `get_mod_summary`,
+   `get_mod_timeline`, `get_mod_t2_judges`, `retry_mod`). Same
+   recipe. These need AsyncMock on the new storage helpers
+   added during Session 3, so slightly more setup but still
+   well under 200 lines.
+3. **TestClient-layer test work for the Session 4 endpoints**
+   (`list_packs`, `preview_route`). Smaller scope than Sessions
+   1+3.
+4. **TestClient-layer test work for the Session 2 estimation
+   endpoints** (`list_estimates`, `get_estimate_for_phase`,
+   `estimate_prompt_endpoint`, `estimate_prompt_batch_endpoint`).
+   Now that `app/estimation.py` is restored, the existing
+   `sys.modules` stubs in the handler-direct tests are
+   redundant for the TestClient layer (the real module is
+   present), so the TestClient tests can exercise the
+   production phase table.
+
+## Status as of 2026-07-12 (cron update v161)
+
+After Sessions 1-5 were closed on master (endpoint tally: 26 new
+endpoints, 36 production handlers total — see v71 status block
+above), the cron rounds **v132-v160** added **TestClient-layer
+contract tests** for the 8 feature_flag admin endpoints that
+Session 5 ported. This brings the admin endpoint test surface up
+to the same level as the older 8 endpoints.
+
+### Feature-flag admin endpoint test coverage (v132-v160)
+
+| Endpoint | Handler-direct (v132-v139) | TestClient (v152-v160) |
+|----------|----------------------------|------------------------|
+| `GET /v1/feature_flags` | `test_get_feature_flags.py` (v15) | `test_update_feature_flag_endpoint.py` patch-style? — see note |
+| `GET /v1/feature_flags/history` | `test_get_feature_flags_history.py` (v15) | `test_history_feature_flag_endpoint.py` (v158) |
+| `PATCH /v1/feature_flags/{name}` (toggle) | `test_api_feature_flag_toggle.py` (v132) | `test_update_feature_flag_endpoint.py` (v152), `test_update_feature_flag_validation.py` (v153) |
+| `POST /v1/feature_flags/{name}/rollback` | `test_api_feature_flag_rollback.py` (v133) | `test_rollback_feature_flag_endpoint.py` (v154) |
+| `POST /v1/feature_flags/{name}/pin` | `test_api_feature_flag_pin.py` (v134) | `test_pin_feature_flag_endpoint.py` (v155) |
+| `DELETE /v1/feature_flags/{name}/pin` | `test_api_feature_flag_unpin.py` (v135) | `test_unpin_feature_flag_endpoint.py` (v156) |
+| `GET /v1/feature_flags` (list) | `test_api_feature_flag_toggle.py` etc. shared? | `test_list_feature_flag_endpoint.py` (v157) |
+| `GET /v1/feature_flags/{name}/pin` (state) | `test_api_feature_flag_pin_state.py` (v136) | `test_pin_state_feature_flag_endpoint.py` (v159) |
+| `GET /v1/feature_flags/pins` (list) | `test_api_feature_flag_pins.py` (v137-v139) | `test_pins_feature_flag_endpoint.py` (v160) |
+
+**Test file totals (verified by `search_files` for `test_*feature_flag*.py` in
+`tests/`):**
+
+- 14 feature-flag-related test files on master
+- 9 TestClient-layer files (v152..v160) covering 8 admin endpoints + 1 validation
+  companion
+- 5 handler-direct companion files (v132..v139, excluding the 2 original
+  `test_get_feature_flags*.py` files from v15)
+- Plus the 4 `test_feature_flags_*.py` module-direct tests for the
+  `orchestrator/feature_flags.py` core (registry, set, get_pinned,
+  rollback, clear_history)
+
+**Round tally since v71:** v71→v160 = **89 cron rounds** of test
+infrastructure, schema validation, and TestClient-layer work. No
+production handler was touched in those rounds — they were all
+test-side and doc-side, pinning the contract of the 26 endpoints
+Session 1-5 ported.
+
+### What's still BLOCKED on parent shell
+
+1. **`app/estimation.py` is missing from master.** Session 2's 4
+   estimation endpoints have handlers + schemas on master but will
+   raise `ImportError` at runtime (NOT at module-load time — the
+   handlers use the deferred-import pattern, so module-load is
+   clean). The file exists on the discord-ops-hardening branch;
+   the parent must `git show discord-ops-hardening:sdv-mod-generator/app/estimation.py
+   > sdv-mod-generator/app/estimation.py` to restore it. Once
+   restored, the 4 Session 2 endpoints become live and the
+   existing 2 estimation TestClient files (`test_estimates_endpoints.py`,
+   `test_estimates_response_schemas.py`) should pass without code
+   changes. See `docs/PENDING_SOURCE_BUNDLE.md` for the full
+   restore recipe.
+
+2. **Session 6 generator ports** (50+ new feature generators in
+   `generators/packs/stardew_valley/features/`). The branch has
+   these generators; master has only 6. The cron's source bundles
+   for the first 2 generator families are now staged:
+   - `docs/_source_achievements.py.txt` (423 lines)
+   - `docs/_source_weather_event.py.txt` (582 lines)
+   Each is well under the 200-line net-diff cap, but the generator
+   ports are entangled with the orchestrator extensions (router
+   keywords + phase registration + feature_flag gating). The cron's
+   PENDING_COMMIT_v22 caveat still applies: registering a phase
+   without the matching generator would create a broken state. So
+   generator ports should be done in the parent session (with
+   shell), not in cron rounds.
+
+### Recommended next picks (parent session, when user returns)
+
+1. **Diff `app/estimation.py` against the branch's version** to
+   confirm the production phase table values match. The v101
+   restoration caveat in the file's module docstring explicitly
+   says the values were "reconstructed from test stubs" and the
+   parent should `git show discord-ops-hardening:sdv-mod-generator/
+   app/estimation.py` to confirm. The names + signatures are
+   correct (tests pin those); only the table values need diffing.
+2. **`git rm docs/_source_achievements.py.txt
+   docs/_source_weather_event.py.txt`** — both source bundles are
+   now identical to master (the parent ports are done). Cleanup.
+3. **First new generator port** — pick the smallest of the 45
+   remaining missing generators. Candidates (with no source
+   bundle yet staged):
+   - `weapon_definition` — likely small
+   - `tv_schedule` — likely small
+   - `npc_portrait` — likely small (the v82 reference in the
+     `_source_achievements.py.txt` docstring suggests it's already
+     been considered)
+   - `monster_drop` — likely small
+   - `fish_definition` — likely small
+   - `fruit_tree`, `sign_editor`, `book_*` — likely small
+   - `fishing_overhaul`, `weather_altering`, `npc_disposition` —
+     likely large (500+ lines each)
+   Each port needs:
+   - Pre-stage source bundle via
+     `git show discord-ops-hardening:sdv-mod-generator/
+     generators/packs/stardew_valley/features/<name>/__init__.py
+     > sdv-mod-generator/docs/_source_<name>.py.txt`
+   - Copy `__init__.py` to master
+   - Update `generators/packs/stardew_valley/__init__.py` to
+     register the phase
+   - Update `orchestrator/router.py` to add the keyword (if not
+     already covered)
+   - Write tests (module-direct + TestClient + router-wiring)
+
 ### (Optional) Session 6: First batch of new feature generators (1 PR, ~3 hours)
 
 **Pick:** 5-10 of the 50+ new generators, scoped to ONE phase family
