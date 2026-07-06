@@ -91,6 +91,11 @@ _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
         "warp": "farm_expansion",
         "map edit": "farm_expansion",
         "new area": "farm_expansion",
+        "achievement": "achievements",
+        "achievements": "achievements",
+        "badge": "achievements",
+        "trophy": "achievements",
+        "milestone": "achievements",
     },
 }
 
@@ -303,6 +308,12 @@ def _default_generators_for_phase(phase: str) -> list[str]:
             "weather_buff_generator",
             "weather_mail_generator",
             "weather_content_json_generator",
+        ]
+    if phase == "achievements":
+        return [
+            "achievement_definition_generator",
+            "achievement_reward_generator",
+            "achievement_content_json_generator",
         ]
     # v22 Blue (port from source v99): unknown-phase silent-failure
     # gap. The phase did not match any of the ``if phase == "..."``

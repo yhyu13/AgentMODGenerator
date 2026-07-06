@@ -57,13 +57,21 @@ from generators.packs.stardew_valley.features.weather_event import (
     WeatherMailGenerator,
     WeatherContentJsonGenerator,
 )
+from generators.packs.stardew_valley.features.achievements import (
+    AchievementDefinitionGenerator,
+    AchievementRewardGenerator,
+    AchievementContentJsonGenerator,
+)
 
 _PKGDIR = Path(__file__).parent
 _MANIFEST = GameManifest(
     game_id="stardew_valley",
     display_name="Stardew Valley",
     mod_format="ContentPatcher",
-    supported_phases=["shop_channel", "texture", "npc_schedule", "event_mod", "custom_crafting", "farm_expansion", "weather_event"],
+    supported_phases=[
+        "shop_channel", "texture", "npc_schedule", "event_mod",
+        "custom_crafting", "farm_expansion", "weather_event", "achievements",
+    ],
     knowledge_dir=_PKGDIR / "knowledge",
 )
 
@@ -208,6 +216,21 @@ class StardewValleyPack(GamePack):
                     "weather_buff_generator",
                     "weather_mail_generator",
                     "weather_content_json_generator",
+                ],
+            )
+        if phase == "achievements":
+            gens = [
+                AchievementDefinitionGenerator,
+                AchievementRewardGenerator,
+                AchievementContentJsonGenerator,
+            ]
+            return PhaseGenerators(
+                phase=phase,
+                generators=gens,
+                execution_order=[
+                    "achievement_definition_generator",
+                    "achievement_reward_generator",
+                    "achievement_content_json_generator",
                 ],
             )
         raise ValueError(f"Unknown phase for stardew_valley: {phase}")
