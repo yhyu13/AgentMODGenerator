@@ -86,6 +86,44 @@ class WeatherMailOutput(BaseModel):
     )
 
 
+# v101 — manifest.json generator. The T2 TechnicalComplianceJudge
+# flagged the missing manifest.json in the 2026-07-09 audit (req_08628445042f)
+# as a critical failure: "The missing manifest.json is a critical issue
+# preventing the mod from loading. (Panel: 1/3 judges passed)".
+# Every Content Patcher mod MUST have a manifest.json with at least
+# Format + UniqueID + Name + Version. This generator runs FIRST
+# in the weather_event phase's execution_order so the manifest is
+# available to all downstream generators (e.g. WeatherContentJsonGenerator
+# reads it for the mod_id metadata field).
+#
+# Mirrors the v44 shop_channel phase's ManifestGenerator but is
+# phase-specific (phase = "weather_event") so it shows up in this
+# phase's generator list. The shop_channel version has a
+# config_schema with DiscountRate/ShopDay knobs that don't apply
+# to weather_event, so we use a simpler manifest here.
+class WeatherManifestOutput(BaseModel):
+    unique_id: str = Field(validation_alias="UniqueID")
+    name: str = Field(validation_alias="Name")
+    description: str = Field(validation_alias="Description")
+    author: str = Field(default="AI Generator", validation_alias="Author")
+    version: str = Field(default="1.0.0", validation_alias="Version")
+
+
+def _slugify_mod_id(text: str) -> str:
+    """Convert a mod name to a snake_case UniqueID-friendly slug.
+
+    Strips non-alphanumeric characters, lowercases, joins with underscores,
+    and prefixes with the canonical ``ai_generator.`` author tag. Used by
+    the WeatherManifestGenerator's fallback path when the LLM response
+    doesn't include a usable UniqueID (LLMs sometimes include spaces or
+    special chars in the UniqueID field despite the prompt).
+    """
+    base = "".join(c if c.isalnum() else "_" for c in text.lower()).strip("_")
+    if not base:
+        base = "weather_mod"
+    return f"ai_generator.{base}"
+
+
 def _sanitize_weather_name(name: str) -> str:
     return "".join(c for c in name if c.isalnum() or c == "_") or "WeatherEvent"
 
@@ -458,22 +496,34 @@ Respond with ONLY valid JSON matching the expected schema.'''
                 max_tokens=4096,
             )
             mails = WeatherMailOutput(**result).mails
+            # v101 — mail files are plain text per Content Patcher convention
+            # (STARDEW_VALLEY_MOD_STANDARDS.md §2.1). Previously the LLM
+            # output was wrapped in a JSON object inside a .json file, which
+            # the T2 TechnicalComplianceJudge flagged as "mail files are
+            # stored as JSON objects when they should be plain text files
+            # with the mail ID as filename". The mail ID is now the
+            # filename minus the .txt extension; the body is the file's
+            # only content (no JSON wrapper, no metadata).
             for mail in mails:
                 safe_key = _sanitize_weather_name(mail.mail_key)
-                out.add_file(f"mail/{safe_key}.json", {safe_key: mail.body})
+                out.add_file(f"mail/{safe_key}.txt", mail.body)
             out.metadata["mail_count"] = len(mails)
         except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("weather_mail_generator.failed", error=str(exc), error_type=type(exc).__name__)
-            out.add_file("mail/weather_announcement.json", {
-                "weather_announcement": "Dear @, ^A big storm is forecast for tomorrow! ^Stay safe and enjoy the bonus mining energy. ^  - Gunther"
-            })
+            # v101 — fallback mail is also plain text per the same
+            # convention. The body is the raw text (not JSON-wrapped).
+            out.add_file("mail/weather_announcement.txt", (
+                "Dear @,\n\n"
+                "A big storm is forecast for tomorrow! Stay safe and enjoy the\n"
+                "bonus mining energy.\n\n  - Gunther"
+            ))
             out.metadata["mail_count"] = 1
         return out
 
     def validate_output(self, output: GeneratorOutput) -> list[str]:
         errors = []
-        if not any(k.startswith("mail/") for k in output.files):
-            errors.append("weather_mail_generator: no mail file generated")
+        if not any(k.startswith("mail/") and k.endswith(".txt") for k in output.files):
+            errors.append("weather_mail_generator: no mail/*.txt file generated")
         return errors
 
 
@@ -579,4 +629,131 @@ class WeatherContentJsonGenerator(BaseGenerator):
             errors.append("weather_content_json_generator: content.json must be a dict")
         elif "Changes" not in content:
             errors.append("weather_content_json_generator: Changes key missing")
+        return errors
+
+
+# v101 — WeatherManifestGenerator. Runs first in the weather_event
+# phase's execution_order to produce a manifest.json before any
+# other generator runs. Fixes the T2 TechnicalComplianceJudge
+# critical failure ("missing manifest.json is a critical issue
+# preventing the mod from loading") flagged in the 2026-07-09
+# audit of req_08628445042f.
+#
+# The manifest.json contains:
+#   Format: "1.29.0" (Content Patcher version — required)
+#   UniqueID: snake_case + dot-separated, prefixed with "ai_generator."
+#   Name: 3-7 words, Title Case
+#   Description: 1-2 sentences, specific to the mod's content
+#   Author: "AI Generator" (canonical LLM-generated author)
+#   Version: "1.0.0" (always 1.0.0 for new mods)
+#   ContentPackFor + Dependencies: reference Content Patcher 2.4.0+
+#     (so SMAPI loads the mod as a Content Patcher content pack)
+#
+# Falls back to a hardcoded manifest derived from the user's prompt
+# when the LLM call fails. Uses the same try/except pattern as the
+# other generators in this phase.
+class WeatherManifestGenerator(BaseGenerator):
+    name = "weather_manifest_generator"
+    phase = "weather_event"
+    game = "stardew_valley"
+
+    async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
+        out = GeneratorOutput()
+        prompt = f'''Based on this mod request: "{inp["prompt"]}"
+
+Generate a Content Patcher manifest.json for a weather-event mod. Use the
+exact conventions in the bundled STARDEW_VALLEY_MOD_STANDARDS.md document.
+
+Provide:
+- UniqueID: snake_case mod identifier prefixed with "ai_generator."
+            (e.g. "ai_generator.rainy_weather_events"). No spaces, dots OK.
+- Name: human-readable mod name, Title Case, 3-7 words
+            (e.g. "Rainy Weather Events")
+- Description: 1-2 sentence description of what the mod does, specific to
+            the content (NOT generic like "adds stuff"). Mention the
+            weather conditions, seasons, and any buffs/dialogue/mail.
+
+Author and Version are hardcoded to "AI Generator" and "1.0.0" — do not
+include them in your response. The schema field is below.
+
+Respond with ONLY valid JSON matching the expected schema.'''
+
+        try:
+            result = await generate_structured(
+                prompt, WeatherManifestOutput,
+                system=llm_system_prompt(),
+                max_tokens=2048,
+            )
+            m = WeatherManifestOutput(**result)
+            # Slugify UniqueID defensively: the LLM sometimes includes
+            # spaces or special chars despite the prompt instructions.
+            unique_id = _slugify_mod_id(m.unique_id)
+            out.add_file("manifest.json", {
+                "Format": "1.29.0",
+                "UniqueID": unique_id,
+                "Name": m.name,
+                "Description": m.description,
+                "Author": m.author,
+                "Version": m.version,
+                "ContentPackFor": {
+                    "UniqueID": "Pathoschild.ContentPatcher",
+                    "MinimumVersion": "2.4.0",
+                },
+                "Dependencies": [
+                    {
+                        "UniqueID": "Pathoschild.ContentPatcher",
+                        "MinimumVersion": "2.4.0",
+                    }
+                ],
+            })
+            out.metadata["mod_id"] = unique_id.lower()
+        except (ValueError, RuntimeError, IOError, ValidationError) as exc:
+            logger.error(
+                "weather_manifest_generator.failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            # Fallback manifest derived from the user's prompt. Uses
+            # the same _slugify_mod_id helper as the success path so
+            # even a garbage LLM response produces a valid UniqueID.
+            slug = _slugify_mod_id(inp.get("prompt", "weather_mod"))
+            out.add_file("manifest.json", {
+                "Format": "1.29.0",
+                "UniqueID": slug,
+                "Name": "Weather Events",
+                "Description": (
+                    "Adds weather-based events with matching buffs, "
+                    "NPC dialogue, and weather forecast mail."
+                ),
+                "Author": "AI Generator",
+                "Version": "1.0.0",
+                "ContentPackFor": {
+                    "UniqueID": "Pathoschild.ContentPatcher",
+                    "MinimumVersion": "2.4.0",
+                },
+                "Dependencies": [
+                    {
+                        "UniqueID": "Pathoschild.ContentPatcher",
+                        "MinimumVersion": "2.4.0",
+                    }
+                ],
+            })
+            out.metadata["mod_id"] = slug.lower()
+        return out
+
+    def validate_output(self, output: GeneratorOutput) -> list[str]:
+        errors = []
+        manifest = output.files.get("manifest.json")
+        if not manifest:
+            errors.append("weather_manifest_generator: manifest.json missing")
+            return errors
+        if not isinstance(manifest, dict):
+            errors.append("weather_manifest_generator: manifest.json must be a dict")
+            return errors
+        # Content Patcher requires these 4 fields at minimum.
+        for required in ("Format", "UniqueID", "Name", "Version"):
+            if required not in manifest:
+                errors.append(
+                    f"weather_manifest_generator: manifest.json missing required field '{required}'"
+                )
         return errors

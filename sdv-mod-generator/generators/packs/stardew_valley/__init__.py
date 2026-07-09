@@ -51,6 +51,7 @@ from generators.packs.stardew_valley.features.farm_expansion import (
     FarmExpansionContentJsonGenerator,
 )
 from generators.packs.stardew_valley.features.weather_event import (
+    WeatherManifestGenerator,
     WeatherEventGenerator,
     WeatherNPCDialogueGenerator,
     WeatherBuffGenerator,
@@ -201,6 +202,7 @@ class StardewValleyPack(GamePack):
             )
         if phase == "weather_event":
             gens = [
+                WeatherManifestGenerator,
                 WeatherEventGenerator,
                 WeatherNPCDialogueGenerator,
                 WeatherBuffGenerator,
@@ -211,6 +213,7 @@ class StardewValleyPack(GamePack):
                 phase=phase,
                 generators=gens,
                 execution_order=[
+                    "weather_manifest_generator",
                     "weather_event_generator",
                     "weather_npc_dialogue_generator",
                     "weather_buff_generator",
