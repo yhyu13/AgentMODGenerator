@@ -58,6 +58,18 @@ def package(request_id: str, files: dict[str, dict], assets: list[str]) -> str:
 
         for file_path, content in files.items():
             normalized = _normalize_path(file_path)
+            # v101 — strip intermediate files that the pipeline uses
+            # to pass data between generators but that don't belong in
+            # the final mod. The T2 TechnicalComplianceJudge flagged
+            # these in the 2026-07-09 audit (req_08628445042f) as
+            # "reliance on custom data formats (weather_buffs.json,
+            # weather_dialogue.json) that likely don't match Stardew
+            # Valley's expected data structures". They're already
+            # inlined into content.json's EditData blocks by
+            # WeatherContentJsonGenerator, so the intermediate files
+            # are pure pipeline plumbing.
+            if normalized.startswith("assets/data/weather_"):
+                continue
             if isinstance(content, (dict, list)):
                 zf.writestr(normalized, json.dumps(content, indent=2, ensure_ascii=False))
             elif isinstance(content, str):

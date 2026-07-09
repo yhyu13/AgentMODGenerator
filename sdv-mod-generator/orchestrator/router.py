@@ -303,6 +303,7 @@ def _default_generators_for_phase(phase: str) -> list[str]:
         ]
     if phase == "weather_event":
         return [
+            "weather_manifest_generator",
             "weather_event_generator",
             "weather_npc_dialogue_generator",
             "weather_buff_generator",
