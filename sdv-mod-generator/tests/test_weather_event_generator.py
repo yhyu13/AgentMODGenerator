@@ -64,10 +64,6 @@ class TestWeatherEventGeneratorBasics:
             )
 
     def test_execution_order_matches_name_order(self) -> None:
-        # The pack's get_generators("weather_event") returns these
-        # generators in a specific execution_order. The cron archive's
-        # v44 work established this convention. Verify the
-        # execution_order matches the generator name order.
         # The pack's get_generators is on master; we import it lazily
         # to avoid import-time circular issues.
         from generators.packs.stardew_valley import StardewValleyPack
@@ -75,7 +71,14 @@ class TestWeatherEventGeneratorBasics:
         # pg.generators is a tuple of class references (PhaseGenerators
         # stores them as classes). Convert names.
         expected = [g.name for g in pg.generators]
+        # v101 — added weather_manifest_generator at the front so the
+        # manifest.json is generated BEFORE the other generators (so
+        # they can reference mod_id via prior_outputs["weather_manifest_
+        # generator"].metadata). The 5→6 generator count change is
+        # documented in STARDEW_VALLEY_MOD_STANDARDS.md and the v101
+        # commit message.
         assert expected == [
+            "weather_manifest_generator",
             "weather_event_generator",
             "weather_npc_dialogue_generator",
             "weather_buff_generator",
@@ -83,7 +86,7 @@ class TestWeatherEventGeneratorBasics:
             "weather_content_json_generator",
         ], (
             f"Pack's get_generators('weather_event') order = {expected}, "
-            f"expected the 5-generator Event→Dialogue→Buff→Mail→ContentJson "
+            f"expected the 6-generator Manifest→Event→Dialogue→Buff→Mail→ContentJson "
             f"order so each generator can consume the prior's output"
         )
 
@@ -330,7 +333,9 @@ class TestRouterWeatherEventPhase:
         # weather_event routing.
         from orchestrator.router import _default_generators_for_phase
         result = _default_generators_for_phase("weather_event")
+        # v101 — added weather_manifest_generator at the front.
         assert result == [
+            "weather_manifest_generator",
             "weather_event_generator",
             "weather_npc_dialogue_generator",
             "weather_buff_generator",
@@ -338,7 +343,7 @@ class TestRouterWeatherEventPhase:
             "weather_content_json_generator",
         ], (
             f"_default_generators_for_phase('weather_event') should "
-            f"return the 5-generator list, got {result}"
+            f"return the 6-generator list, got {result}"
         )
 
     def test_weather_event_priority_override_still_routes_correctly(self) -> None:
