@@ -269,12 +269,14 @@ def _extract_weather_mails_from_prior(
 ) -> list[tuple[str, str]]:
     """Extract mail (key, text) tuples from the upstream ``weather_mail_generator`` slot.
 
-    The mail generator writes one file per letter under ``mail/...``,
-    where each file is a ``{mail_key: body}`` dict. This helper walks
-    every ``mail/`` file, flattens it into ``(mail_key, body)`` pairs,
-    and returns the list. Defensive at every layer: non-dict prior,
-    missing slot, no ``.files`` attr, non-dict ``.files``, non-dict
-    file, or non-string values all collapse to ``[]``.
+    Two file shapes are supported (defensive against v101 contract drift):
+
+    1. Legacy dict-wrapped: ``mail/<key>.txt`` contains a ``{mail_key: body}`` dict.
+       The helper flattens into ``(mail_key, body)`` pairs.
+    2. v101 plain-text: ``mail/<key>.txt`` contains the raw body string. The mail
+       key is derived from the filename (strip ``mail/`` prefix + ``.txt`` suffix).
+
+    Both shapes collapse silently to ``[]`` if the prior outputs are malformed.
     """
     gen = _get_prior_generator(prior_outputs, "weather_mail_generator")
     files = getattr(gen, "files", None)
@@ -284,11 +286,18 @@ def _extract_weather_mails_from_prior(
     for path, payload in files.items():
         if not isinstance(path, str) or not path.startswith("mail/"):
             continue
-        if not isinstance(payload, dict):
-            continue
-        for key, value in payload.items():
-            if isinstance(value, str):
-                pairs.append((str(key), value))
+        if isinstance(payload, dict):
+            # Legacy dict-wrapped shape (pre-v101 contract).
+            for key, value in payload.items():
+                if isinstance(value, str):
+                    pairs.append((str(key), value))
+        elif isinstance(payload, str):
+            # v101 plain-text shape: key derived from filename, payload is body.
+            stem = path[len("mail/"):]
+            if stem.endswith(".txt"):
+                stem = stem[:-len(".txt")]
+            if stem:
+                pairs.append((stem, payload))
     return pairs
 
 
