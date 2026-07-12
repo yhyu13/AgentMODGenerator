@@ -63,6 +63,10 @@ from generators.packs.stardew_valley.features.achievements import (
     AchievementRewardGenerator,
     AchievementContentJsonGenerator,
 )
+from generators.packs.stardew_valley.features.weapon_definition import (
+    WeaponDefinitionDefinitionGenerator,
+    WeaponDefinitionContentJsonGenerator,
+)
 
 _PKGDIR = Path(__file__).parent
 _MANIFEST = GameManifest(
@@ -72,6 +76,7 @@ _MANIFEST = GameManifest(
     supported_phases=[
         "shop_channel", "texture", "npc_schedule", "event_mod",
         "custom_crafting", "farm_expansion", "weather_event", "achievements",
+        "weapon_definition",
     ],
     knowledge_dir=_PKGDIR / "knowledge",
 )
@@ -234,6 +239,22 @@ class StardewValleyPack(GamePack):
                     "achievement_definition_generator",
                     "achievement_reward_generator",
                     "achievement_content_json_generator",
+                ],
+            )
+        if phase == "weapon_definition":
+            # v170 — both generators registered. DefinitionGenerator
+            # runs first and emits assets/weapon_definition/weapons.json;
+            # ContentJsonGenerator reads that prior_outputs and emits
+            # content.json with the Data/Weapons + Strings/UI changes.
+            return PhaseGenerators(
+                phase=phase,
+                generators=[
+                    WeaponDefinitionDefinitionGenerator,
+                    WeaponDefinitionContentJsonGenerator,
+                ],
+                execution_order=[
+                    "weapon_definition_definition_generator",
+                    "weapon_definition_content_json_generator",
                 ],
             )
         raise ValueError(f"Unknown phase for stardew_valley: {phase}")
