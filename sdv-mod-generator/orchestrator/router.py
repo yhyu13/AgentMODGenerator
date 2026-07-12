@@ -96,6 +96,14 @@ _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
         "badge": "achievements",
         "trophy": "achievements",
         "milestone": "achievements",
+        "weapon": "weapon_definition",
+        "weapons": "weapon_definition",
+        "sword": "weapon_definition",
+        "dagger": "weapon_definition",
+        "club": "weapon_definition",
+        "slingshot": "weapon_definition",
+        "weapon definition": "weapon_definition",
+        "custom weapon": "weapon_definition",
     },
 }
 
