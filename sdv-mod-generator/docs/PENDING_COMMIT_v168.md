@@ -39,7 +39,10 @@ recipe).
 
 ## skip_review
 
-`skip_review: yes`
+`skip_review: no` (corrected 2026-07-12 per dispatcher patch — test-only
+rounds no longer auto-skip; Agent #2 review is required because the
+broken test_summary_endpoint_testclient.py the cron produced hangs
+pytest, exactly the kind of bug Agent #2+#4 are designed to catch.)
 
 **Why:** This round is pure test addition — no production
 code touched, no behavior changed. The v142 Blue cache-
