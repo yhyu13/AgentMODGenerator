@@ -104,6 +104,15 @@ _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
         "slingshot": "weapon_definition",
         "weapon definition": "weapon_definition",
         "custom weapon": "weapon_definition",
+        "tool": "tool_definition",
+        "tools": "tool_definition",
+        "pickaxe": "tool_definition",
+        "axe": "tool_definition",
+        "hoe": "tool_definition",
+        "watering can": "tool_definition",
+        "fishing rod": "tool_definition",
+        "tool definition": "tool_definition",
+        "custom tool": "tool_definition",
     },
 }
 
