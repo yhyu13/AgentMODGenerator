@@ -262,19 +262,20 @@ class StardewValleyPack(GamePack):
                 ],
             )
         if phase == "tool_definition":
-            # v172 — Round 1: only DefinitionGenerator registered.
-            # ContentJsonGenerator lands in v173. DefinitionGenerator
+            # v173 — Round 2: both DefinitionGenerator and
+            # ContentJsonGenerator registered. DefinitionGenerator
             # runs first and emits assets/tool_definition/tools.json;
-            # the eventual ContentJsonGenerator will read that
-            # prior_outputs and emit content.json with the Data/Tools
-            # + Strings/UI changes.
+            # ContentJsonGenerator reads that prior_outputs and emits
+            # content.json with the Data/Tools + Strings/UI changes.
             return PhaseGenerators(
                 phase=phase,
                 generators=[
                     ToolDefinitionDefinitionGenerator,
+                    ToolDefinitionContentJsonGenerator,
                 ],
                 execution_order=[
                     "tool_definition_definition_generator",
+                    "tool_definition_content_json_generator",
                 ],
             )
         raise ValueError(f"Unknown phase for stardew_valley: {phase}")

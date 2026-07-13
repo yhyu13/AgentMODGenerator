@@ -72,6 +72,10 @@ from pydantic import BaseModel, Field, ValidationError
 import structlog
 
 from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
+from generators.core.manifest import (
+    build_manifest_dict,
+    fallback_name_from_prompt,
+)
 from generators.llm_utils import generate_structured, llm_system_prompt
 
 logger = structlog.get_logger(__name__)
@@ -771,6 +775,25 @@ class ToolDefinitionContentJsonGenerator(BaseGenerator):
         }
 
         out.add_file("content.json", content)
+
+        # Emit manifest.json using the shared helper. This pack has no
+        # dedicated ManifestGenerator (the source bundle ships only
+        # DefinitionGenerator + ContentJsonGenerator), so the
+        # ContentJsonGenerator emits both files. Mirrors the
+        # weapon_definition patch (v173).
+        manifest_name = fallback_name_from_prompt(
+            inp.get("prompt", "tool_definition"),
+            default="Tool Definition",
+        )
+        manifest = build_manifest_dict(
+            unique_id=mod_id,
+            name=manifest_name,
+            description=(
+                f"Adds {len(tool_entries)} custom tool(s) "
+                "with per-tool stats and display strings."
+            ),
+        )
+        out.add_file("manifest.json", manifest)
         out.metadata["mod_id"] = mod_id
         out.metadata["tool_count"] = len(tools)
         out.metadata["tool_entry_count"] = len(tool_entries)
@@ -876,6 +899,30 @@ class ToolDefinitionContentJsonGenerator(BaseGenerator):
                             f"Data/Tools Entries[{key}] key "
                             f"missing '{_TOOL_TOKEN_PREFIX}_' prefix"
                         )
+
+        # Validate manifest.json (added in v173 — packs without a
+        # dedicated ManifestGenerator emit manifest.json alongside
+        # content.json via the shared ``build_manifest_dict`` helper).
+        manifest = output.files.get("manifest.json")
+        if not manifest:
+            errors.append(
+                "tool_definition_content_json_generator: "
+                "manifest.json missing"
+            )
+        elif not isinstance(manifest, dict):
+            errors.append(
+                "tool_definition_content_json_generator: "
+                "manifest.json must be a dict"
+            )
+        else:
+            for required in ("Format", "UniqueID", "Name", "Version"):
+                if not manifest.get(required):
+                    errors.append(
+                        "tool_definition_content_json_"
+                        f"generator: manifest.json missing "
+                        f"or empty {required!r} field"
+                    )
+
         return errors
 
 

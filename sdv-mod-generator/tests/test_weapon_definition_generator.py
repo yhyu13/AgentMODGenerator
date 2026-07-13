@@ -1213,14 +1213,37 @@ class TestWeaponDefinitionContentJsonValidateOutput:
             ],
         }
 
+    @staticmethod
+    def _valid_manifest_json() -> dict:
+        """Return a Content Patcher-compliant manifest.json dict for tests."""
+        return {
+            "Format": _FORMAT_VERSION,
+            "UniqueID": "ai_generator.test_weapon",
+            "Name": "Test Weapon Mod",
+            "Description": "Adds 1 custom weapon.",
+            "Author": "AI Generator",
+            "Version": "1.0.0",
+            "ContentPackFor": {
+                "UniqueID": "Pathoschild.ContentPatcher",
+                "MinimumVersion": "2.4.0",
+            },
+            "Dependencies": [
+                {
+                    "UniqueID": "Pathoschild.ContentPatcher",
+                    "MinimumVersion": "2.4.0",
+                },
+            ],
+        }
+
     def test_valid_content_json_validates_clean(self) -> None:
         gen = WeaponDefinitionContentJsonGenerator()
         out = GeneratorOutput()
         out.add_file("content.json", self._valid_content_json())
+        out.add_file("manifest.json", self._valid_manifest_json())
         errors = gen.validate_output(out)
         assert errors == [], (
-            f"valid content.json must validate clean, got "
-            f"errors = {errors}"
+            f"valid content.json + manifest.json must validate "
+            f"clean, got errors = {errors}"
         )
 
     def test_missing_format_flagged(self) -> None:
@@ -1664,3 +1687,112 @@ class TestWeaponDefinitionContentJsonSanitizers:
                 f"every row key must start with "
                 f"{_WEAPON_TOKEN_PREFIX!r}_ prefix, got {key!r}"
             )
+
+# ---------------------------------------------------------------------
+# Manifest emission (added 2026-07-12 — packs without a dedicated
+# ManifestGenerator emit manifest.json alongside content.json via the
+# shared ``build_manifest_dict`` helper. These tests pin the contract.
+# ---------------------------------------------------------------------
+class TestWeaponDefinitionContentJsonManifestEmission:
+    """Pin that the ContentJsonGenerator emits a Content Patcher-
+    compliant manifest.json alongside content.json.
+
+    Before the v173 helper-introduction patch, weapon_definition
+    packs shipped without manifest.json — Content Patcher would
+    silently reject the mod. The fix: ContentJsonGenerator now
+    calls ``build_manifest_dict`` from ``generators.core.manifest``
+    to emit manifest.json itself.
+    """
+
+    def test_emits_manifest_json(self) -> None:
+        import asyncio
+        from generators.packs.stardew_valley.features.weapon_definition import (
+            WeaponDefinitionContentJsonGenerator,
+        )
+        gen = WeaponDefinitionContentJsonGenerator()
+        definition = GeneratorOutput()
+        definition.add_file(
+            "assets/weapon_definition/weapons.json",
+            {
+                "weapons": [
+                    {
+                        "ItemId": "custom_weapon_test_blade",
+                        "Name": "Weapon.custom_weapon_test_blade.Name",
+                        "Description": (
+                            "Weapon.custom_weapon_test_blade.Description"
+                        ),
+                        "MinDamage": 10,
+                        "MaxDamage": 20,
+                        "CritChance": _DEFAULT_CRIT_CHANCE,
+                        "CritMultiplier": _DEFAULT_CRIT_MULTIPLIER,
+                        "Speed": _DEFAULT_SPEED,
+                        "Type": "Sword",
+                        "Texture": "Weapons/test_blade",
+                    },
+                ]
+            },
+        )
+        out = asyncio.run(gen.generate(_make_cj_inp(definition)))
+        assert "manifest.json" in out.files, (
+            f"ContentJsonGenerator must emit manifest.json, got "
+            f"files = {list(out.files.keys())}"
+        )
+
+    def test_manifest_has_canonical_cp_shape(self) -> None:
+        import asyncio
+        from generators.packs.stardew_valley.features.weapon_definition import (
+            WeaponDefinitionContentJsonGenerator,
+        )
+        gen = WeaponDefinitionContentJsonGenerator()
+        definition = GeneratorOutput()
+        definition.add_file(
+            "assets/weapon_definition/weapons.json",
+            {
+                "weapons": [
+                    {
+                        "ItemId": "custom_weapon_test",
+                        "Name": "Weapon.custom_weapon_test.Name",
+                        "Description": (
+                            "Weapon.custom_weapon_test.Description"
+                        ),
+                        "MinDamage": 5,
+                        "MaxDamage": 10,
+                        "CritChance": _DEFAULT_CRIT_CHANCE,
+                        "CritMultiplier": _DEFAULT_CRIT_MULTIPLIER,
+                        "Speed": _DEFAULT_SPEED,
+                        "Type": "Sword",
+                        "Texture": "Weapons/test",
+                    },
+                ]
+            },
+        )
+        out = asyncio.run(gen.generate(_make_cj_inp(definition)))
+        m = out.files.get("manifest.json")
+        assert isinstance(m, dict)
+        # Content Patcher requires these 4 fields at minimum.
+        for required in ("Format", "UniqueID", "Name", "Version"):
+            assert required in m, (
+                f"manifest.json missing required CP field {required!r}"
+            )
+            assert m[required], (
+                f"manifest.json field {required!r} is empty"
+            )
+
+    def test_manifest_unique_id_has_ai_generator_prefix(self) -> None:
+        import asyncio
+        from generators.packs.stardew_valley.features.weapon_definition import (
+            WeaponDefinitionContentJsonGenerator,
+        )
+        gen = WeaponDefinitionContentJsonGenerator()
+        definition = GeneratorOutput()
+        definition.add_file(
+            "assets/weapon_definition/weapons.json",
+            {"weapons": []},
+        )
+        out = asyncio.run(gen.generate(_make_cj_inp(definition)))
+        m = out.files.get("manifest.json", {})
+        unique_id = m.get("UniqueID", "")
+        assert unique_id.startswith("ai_generator."), (
+            f"UniqueID must be prefixed with ai_generator., "
+            f"got {unique_id!r}"
+        )
