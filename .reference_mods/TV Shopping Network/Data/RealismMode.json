@@ -1,0 +1,145 @@
+{    
+    "Changes": [        
+        {
+            "LogName": "Load Junk Item Texture",
+            "Action": "Load",
+            "Target": "Mods/{{ModId}}/Junk",
+            "FromFile": "assets/Junk.png"
+        },
+        {
+            "LogName": "Add Junk & Receipt Items",
+            "Action": "EditData",
+            "Target": "Data/Objects",
+            "Entries": {
+                "{{ModId}}_Junk": {
+                    "Name": "{{ModId}}_Junk",
+                    "DisplayName": "{{i18n:TVShoppingNetwork.RealismMode.Junk.Name}}",
+                    "Description": "{{i18n:TVShoppingNetwork.RealismMode.Junk.Description}}",
+                    "Type": "Basic",
+                    "Category": -20,
+                    "Edibility": -300,
+                    "Price": 0,
+                    "ExcludeFromShippingCollection": true,
+                    "ExcludeFromRandomSale": true,
+                    "CanBeGivenAsGift": false,
+                    "Texture": "Mods/{{ModId}}/Junk",
+                    "SpriteIndex": 0
+                },
+                "{{ModId}}_Receipt": {
+                    "Name": "{{ModId}}_Receipt",
+                    "DisplayName": "{{i18n:TVShoppingNetwork.RealismMode.Receipt.Name}}",
+                    "Description": "{{i18n:TVShoppingNetwork.RealismMode.Receipt.Description}}",
+                    "Type": "Basic",
+                    "Category": -20,
+                    "Edibility": -300,
+                    "Price": 0,
+                    "ExcludeFromShippingCollection": true,
+                    "ExcludeFromRandomSale": true,
+                    "CanBeGivenAsGift": false,
+                    "Texture": "Mods/{{ModId}}/Junk",
+                    "SpriteIndex": 1
+                }
+            }
+        },
+        {
+            "LogName": "Add Receipt Crafting Recipe",
+            "Action": "EditData",
+            "Target": "Data/CraftingRecipes",
+            "Entries": {
+                "{{ModId}}_Receipt": "172 1/Field/{{ModId}}_Receipt/false/none/{{i18n:TVShoppingNetwork.RealismMode.Receipt.Name}}"
+            }
+        },
+        {
+            "LogName": "Junk Refund Quest",
+            "Action": "EditData",
+            "Target": "Data/SpecialOrders",
+            "Entries": 
+            {
+                "TVSN_JunkRefund":
+                {
+                    "Name": "[TVSN_JunkRefund_Name]",
+                    "Requester": "Morris",
+                    "Duration": "ThreeDays",
+                    "Repeatable": "True",
+                    "RequiredTags": "",
+                    "OrderType": "",
+                    "SpecialRule": "",
+                    "Text": "[TVSN_JunkRefund_Body]",
+                    "ItemToRemoveOnEnd": "(O){{ModId}}_Junk",
+                    "MailToRemoveOnEnd": null,
+                    "Objectives": 
+                    [
+                        {
+                            "Type": "Ship",
+                            "Text": "[TVSN_JunkRefund_Objective_0]",
+                            "RequiredCount": "1",
+                            "Data":
+                            {
+                                "AcceptedContextTags": "item_airyn.tvsn_junk"
+                            }
+                        },
+                        {
+                            "Type": "Ship",
+                            "Text": "[TVSN_JunkRefund_Objective_1]",
+                            "RequiredCount": "1",
+                            "Data":
+                            {
+                                "AcceptedContextTags": "item_airyn.tvsn_receipt"
+                            }
+                        }
+                    ],
+                    "Rewards": 
+                    [
+                        {
+                            "Type": "Mail",
+                            "Data": 
+                            {
+                                "MailReceived": "{{ModId}}_TVShoppingNetworkRefundLetter",
+                                "NoLetter": "false"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "LogName": "Refund Special Order Strings",
+            "Action": "EditData",
+            "Target": "Strings/SpecialOrderStrings",			
+            "Entries": 
+            {
+                "TVSN_JunkRefund_Name": "{{i18n:TVShoppingNetwork.RealismMode.SpecialOrder.Name}}",
+                "TVSN_JunkRefund_Body": "{{i18n:TVShoppingNetwork.RealismMode.SpecialOrder.Body}}",
+                "TVSN_JunkRefund_Objective_0": "{{i18n:TVShoppingNetwork.RealismMode.SpecialOrder.Objective_0}}",
+                "TVSN_JunkRefund_Objective_1": "{{i18n:TVShoppingNetwork.RealismMode.SpecialOrder.Objective_1}}"
+            }
+        },
+        {
+            "LogName": "Refund Special Order Mail",
+            "Action": "EditData",
+            "Target": "Data/Mail",
+            "Entries": 
+            {
+                "{{ModId}}_TVShoppingNetworkRefundLetter": "{{i18n:TVShoppingNetwork.RealismMode.RefundLetter.Body}}%item money {{Esca.EMP/PlayerStat: TVShoppingNetworkRefund}} %%[letterbg Mods\\{{ModId}}\\TVSNLetterBackground 0][#]{{i18n:TVShoppingNetwork.RealismMode.RefundLetter.Title}}"
+            }
+        },
+		{
+			"LogName": "Remove Refund Quest Trigger",
+			"Action": "EditData",
+			"Target": "Data/TriggerActions",
+			"Entries": {
+                "{{ModId}}_RemoveRefundQuest": {
+                    "Id": "{{ModId}}_RemoveRefundQuest",
+                    "Trigger": "DayStarted",
+					"Condition": "DAY_OF_WEEK Wednesday",
+                    "Actions": [
+                        "MarkCraftingRecipeKnown Current {{ModId}}_Receipt false",
+                        "RemoveItem {{ModId}}_Receipt",
+                        "RemoveItem {{ModId}}_Junk"
+                    ],
+					"MarkActionApplied": false
+                }
+			}
+		}
+    ]
+}

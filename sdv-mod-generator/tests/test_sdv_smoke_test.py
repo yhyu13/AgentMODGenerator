@@ -12,6 +12,14 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
+# The script under test is a POSIX bash script; it cannot run on Windows.
+pytestmark = pytest.mark.skipif(
+    os.name == "nt",
+    reason="sdv_smoke_test.sh is a bash script (POSIX only)",
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SMOKE_SCRIPT = REPO_ROOT / "scripts" / "sdv_smoke_test.sh"
 

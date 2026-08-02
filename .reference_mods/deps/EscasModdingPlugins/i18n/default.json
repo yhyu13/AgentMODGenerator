@@ -1,0 +1,58 @@
+﻿{
+	/* Translation note: If a key ends with a number, like "Description.1", you can add or remove lines. This mod will use each line in order, starting with line 1. */
+
+	/* Console command info */
+
+	"Commands.EMP.Description": "Runs one of EMP's console commands. Use \"EMP\" or \"EMP help\" for more information. You can also include a specific command's name, e.g. \"EMP help OrderBoard\".",
+	"Commands.EMP.CommandInfo": "Command info:",
+	"Commands.EMP.Aliases": "Aliases: {{ALIASES}}",
+	"Commands.EMP.PlayerIsBusy": "Can't run this command because the player is busy. Please load a game, close any menus or text boxes, and otherwise make sure your character is free.",
+	"Commands.EMP.UnrecognizedCommand": "The command \"{{COMMAND}}\" is not recognized. For a list of commands, Use \"EMP\" or \"EMP help\".",
+
+	/* Console command - EMP ListGSQs */
+
+	"Commands.EMP.ListGSQs.StartList": "Registered game state queries (GSQs) and their aliases:",
+	"Commands.EMP.ListGSQs.Description.1": "Format: EMP ListGSQs",
+	"Commands.EMP.ListGSQs.Description.2": "",
+	"Commands.EMP.ListGSQs.Description.3": "Lists all registered game state queries (GSQs) and their aliases.",
+
+	/* Console command - EMP ListMailFlags */
+
+	"Commands.EMP.ListMailFlags.UnrecognizedMailType": "The mail type \"{{MAILTYPE}}\" is not receognized. For more information, type \"EMP help ListMailFlags\".",
+	"Commands.EMP.ListMailFlags.Mailbox": "Mail flags in \"Mailbox\":",
+	"Commands.EMP.ListMailFlags.Received": "Mail flags in \"Received\":",
+	"Commands.EMP.ListMailFlags.Tomorrow": "Mail flags in \"Tomorrow\":",
+	"Commands.EMP.ListMailFlags.Description.1": "Format: EMP ListMailFlags [MailType]",
+	"Commands.EMP.ListMailFlags.Description.2": "Example: EMP ListMailFlags Received",
+	"Commands.EMP.ListMailFlags.Description.3": "",
+	"Commands.EMP.ListMailFlags.Description.4": "Lists all mail flags set for the current local player.",
+	"Commands.EMP.ListMailFlags.Description.5": "",
+	"Commands.EMP.ListMailFlags.Description.6": "- [MailType]: The category of mail flags to list. Case-insensitive.",
+	"Commands.EMP.ListMailFlags.Description.7": "  Optional. If no mail type is included, all mail types will be listed.",
+	"Commands.EMP.ListMailFlags.Description.8": "  Some mail flags might be set with multiple types at the same time.",
+	"Commands.EMP.ListMailFlags.Description.9": "  Mail types:",
+	"Commands.EMP.ListMailFlags.Description.10": "  - Mailbox or M: Lists mail flags for unread letters in the player's mailbox.",
+	"Commands.EMP.ListMailFlags.Description.11": "  - Received or R: Lists mail flags for letters the player has read, and flags that aren't related to mailbox letters.",
+	"Commands.EMP.ListMailFlags.Description.12": "  - Tomorrow or T: Lists mail flags that the player will receive tomorrow.",
+
+	/* Console command - EMP OrderBoard */
+
+	"Commands.EMP.OrderBoard.OpeningBoard": "Opening special orders board. Order type: \"{{ORDERTYPE}}\".",
+	"Commands.EMP.OrderBoard.Description.1": "Format: EMP OrderBoard [OrderType]",
+	"Commands.EMP.OrderBoard.Description.2": "Example: EMP OrderBoard Esca.EMP/MyCustomOrders",
+	"Commands.EMP.OrderBoard.Description.3": "",
+	"Commands.EMP.OrderBoard.Description.4": "Opens a \"special orders board\" menu for the specified order type.",
+	"Commands.EMP.OrderBoard.Description.5": "",
+	"Commands.EMP.OrderBoard.Description.6": "- [OrderType]: The category of special orders to display. Case-sensitive.",
+	"Commands.EMP.OrderBoard.Description.7": "  Optional. If no order type is included, the default order board will open.",
+	"Commands.EMP.OrderBoard.Description.8": "  This should match the field \"OrderType\" in the asset \"Data/SpecialOrders\".",
+
+	/* Generic Mod Config Menu (GMCM) */
+
+	"Config.PlaceBedsAnywhere.Name": "Place beds anywhere",
+	"Config.PlaceBedsAnywhere.Description": "If enabled, you can place beds at any location.",
+	"Config.PlaceMiniFridgesAnywhere.Name": "Place mini-fridges anywhere",
+	"Config.PlaceMiniFridgesAnywhere.Description": "If enabled, you can place mini-fridges at any location.",
+	"Config.PassOutSafelyEverywhere.Name": "Pass out safely anywhere",
+	"Config.PassOutSafelyEverywhere.Description": "If enabled, you won't lose money if you pass out by staying awake too late (2:00 AM). NOTE: This doesn't change what happens if you run out of health."
+}

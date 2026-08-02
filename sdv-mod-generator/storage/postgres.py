@@ -52,7 +52,13 @@ def _database_url() -> str:
 
 _engine = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
-_init_lock = threading.Lock()
+# RLock (not Lock): get_session_factory() holds the lock while calling
+# get_engine(), which acquires it again for the engine's own lazy
+# creation. A plain threading.Lock deadlocks on the first DB touch when
+# the engine hasn't been created yet (the classic nested-lock hang —
+# observed in the MVP audit on a host with no Postgres running: the
+# first get_session() call blocked forever).
+_init_lock = threading.RLock()
 
 
 def _reset_engine_for_tests() -> None:
@@ -98,6 +104,14 @@ def get_engine() -> "AsyncEngine":
                     pool_size=10,
                     max_overflow=20,
                     pool_pre_ping=True,
+                    # Bound the asyncpg connection attempt. asyncpg's
+                    # default connect timeout is 60s; on some platforms
+                    # (notably Windows) a refused connection can hang
+                    # well past that, blocking the request that first
+                    # touches the pool. 5s bounds the failure fast and
+                    # surfaces "Postgres is down" instead of a stalled
+                    # request.
+                    connect_args={"timeout": 5},
                 )
                 # host-only disclosure so credentials never reach the
                 # structured logs (matches the v19 Blue pattern in

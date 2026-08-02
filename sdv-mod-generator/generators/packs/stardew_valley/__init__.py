@@ -11,6 +11,7 @@ from generators.core import (
     PhaseGenerators,
     register_game_pack,
 )
+from generators.packs.stardew_valley.manifest_generator import ManifestGenerator as SharedManifestGenerator
 from generators.packs.stardew_valley.features.shop_channel import (
     ManifestGenerator,
     ShopItemPoolGenerator,
@@ -133,14 +134,14 @@ class StardewValleyPack(GamePack):
         if phase == "texture":
             return PhaseGenerators(
                 phase=phase,
-                generators=[TextureGenerator],
-                execution_order=["texture_generator"],
+                generators=[SharedManifestGenerator, TextureGenerator],
+                execution_order=["manifest_generator", "texture_generator"],
             )
         if phase == "npc_schedule":
             return PhaseGenerators(
                 phase=phase,
                 generators=[
-                    ManifestGenerator,
+                    SharedManifestGenerator,
                     NPCScheduleGenerator,
                     NPCDialogueGenerator,
                     NPCGiftTasteGenerator,
@@ -156,6 +157,7 @@ class StardewValleyPack(GamePack):
             )
         if phase == "event_mod":
             gens = [
+                SharedManifestGenerator,
                 FestivalScheduleGenerator,
                 FestivalShopGenerator,
                 FestivalMapGenerator,
@@ -167,6 +169,7 @@ class StardewValleyPack(GamePack):
                 phase=phase,
                 generators=gens,
                 execution_order=[
+                    "manifest_generator",
                     "festival_schedule_generator",
                     "festival_shop_generator",
                     "festival_map_generator",
@@ -177,6 +180,7 @@ class StardewValleyPack(GamePack):
             )
         if phase == "custom_crafting":
             gens = [
+                SharedManifestGenerator,
                 CraftingRecipeGenerator,
                 CookingRecipeGenerator,
                 CraftingContentJsonGenerator,
@@ -185,6 +189,7 @@ class StardewValleyPack(GamePack):
                 phase=phase,
                 generators=gens,
                 execution_order=[
+                    "manifest_generator",
                     "crafting_recipe_generator",
                     "cooking_recipe_generator",
                     "crafting_content_json_generator",
@@ -192,7 +197,7 @@ class StardewValleyPack(GamePack):
             )
         if phase == "farm_expansion":
             gens = [
-                ManifestGenerator,
+                SharedManifestGenerator,
                 BuildingGenerator,
                 WarpPointGenerator,
                 MapEditGenerator,
@@ -232,6 +237,7 @@ class StardewValleyPack(GamePack):
             )
         if phase == "achievements":
             gens = [
+                SharedManifestGenerator,
                 AchievementDefinitionGenerator,
                 AchievementRewardGenerator,
                 AchievementContentJsonGenerator,
@@ -240,6 +246,7 @@ class StardewValleyPack(GamePack):
                 phase=phase,
                 generators=gens,
                 execution_order=[
+                    "manifest_generator",
                     "achievement_definition_generator",
                     "achievement_reward_generator",
                     "achievement_content_json_generator",

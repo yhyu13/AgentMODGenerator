@@ -17,6 +17,14 @@ from storage.redis import set_status as redis_set_status
 logger = structlog.get_logger()
 _feedback_router = FeedbackRouter()
 
+#: Registry of in-flight background pipeline tasks, keyed by request_id.
+#: ``cancel_mod`` (API) and the Discord ``/cancel`` command call
+#: :func:`cancel_pipeline_task` to actually stop generation — before this
+#: registry existed, cancellation only wrote a status key and the pipeline
+#: kept running to completion (consuming LLM quota and eventually DM-ing a
+#: "done" notification for a request the user cancelled).
+_background_tasks: dict[str, asyncio.Task] = {}
+
 
 def node_route(state: PipelineState) -> PipelineState:
     """Route prompt to game pack and phase/generators."""
@@ -395,7 +403,20 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
     from storage.queries import save_mod_output, update_mod_request_status
     from storage.redis import set_pipeline_state
 
-    result = await run_pipeline(request_id, user_id, prompt)
+    try:
+        result = await run_pipeline(request_id, user_id, prompt)
+    except asyncio.CancelledError:
+        # Real cancellation: the request_id → Task registry called
+        # task.cancel(). Persist the cancelled disposition so the status
+        # endpoint and notifier see it (a cancelled request must NOT be
+        # DM'd as "done" later).
+        await redis_set_status(request_id, "cancelled")
+        await update_mod_request_status(request_id, "cancelled")
+        emit_pipeline_log(
+            request_id, "info", "pipeline.cancelled",
+            user_id=user_id,
+        )
+        raise
 
     await redis_set_status(request_id, result.status)
     if result.zip_key:
@@ -456,8 +477,50 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
 
 
 def run_pipeline_background(request_id: str, user_id: str, prompt: str) -> asyncio.Task:
-    """Run pipeline in background using asyncio.create_task."""
-    return asyncio.create_task(_run_pipeline_and_update_status(request_id, user_id, prompt))
+    """Run pipeline in background using asyncio.create_task.
+
+    Registers the task in the ``request_id → Task`` registry so
+    :func:`cancel_pipeline_task` can actually stop it. The registry entry
+    is removed on completion (success, failure, or cancellation).
+    """
+    task = asyncio.create_task(_run_pipeline_and_update_status(request_id, user_id, prompt))
+    _background_tasks[request_id] = task
+
+    def _forget(finished: asyncio.Task) -> None:
+        if _background_tasks.get(request_id) is finished:
+            _background_tasks.pop(request_id, None)
+        if finished.cancelled():
+            return
+        exc = finished.exception()
+        if exc is not None:
+            logger.error(
+                "pipeline.background_task_error",
+                request_id=request_id,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
+    task.add_done_callback(_forget)
+    return task
+
+
+def cancel_pipeline_task(request_id: str) -> bool:
+    """Actually cancel an in-flight background pipeline task.
+
+    Returns ``True`` if a task was found and cancelled, ``False`` if no
+    task is registered (already finished, never started, or cancelled).
+    The pipeline coroutine catches ``asyncio.CancelledError`` and persists
+    the ``cancelled`` disposition before the task completes.
+    """
+    task = _background_tasks.get(request_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    logger.info(
+        "pipeline.cancel_requested",
+        request_id=request_id,
+    )
+    return True
 
 
 async def _run_pipeline_sync(request_id: str, user_id: str, prompt: str) -> None:

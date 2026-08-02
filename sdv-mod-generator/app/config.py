@@ -132,16 +132,17 @@ class Config:
     # is the loop guard — anything > 0 enables at least one
     # retry. ``_safe_int`` graceful-degrade handles malformed
     # env values identically to ``zip_output_timeout`` and
-    # ``retry_max_per_user_per_day``. Default 0 matches the
-    # pre-v109 hard-coded dataclass default (``PipelineState.
-    # max_t2_iterations: int = 0``) and the P4.6 lesson in
-    # RUNBOOK.md: bad LLM output + retries = infinite loop, so
-    # the safe-by-default posture is "off" (T2 ships on first
-    # iteration with feedback attached). Operators opt in via
-    # ``MAX_T2_ITERATIONS=2`` in their env to enable retries.
+    # ``retry_max_per_user_per_day``. Default 1 (2026-08-01 MVP
+    # fix): the previous default 0 meant T2 ran once and "ship it"
+    # was always the outcome — a bad first response always shipped
+    # with no retry. The P4.6 infinite-loop lesson is preserved by
+    # ``validate_config()`` bounding the value to 0–2; a value of 1
+    # gives exactly one retry on judge disagreement while keeping
+    # the loop bounded. Operators can still set ``MAX_T2_ITERATIONS=0``
+    # to restore single-shot behavior or ``=2`` for two retries.
     # ``validate_config()`` enforces ``0 <= max_t2_iterations <= 2``.
     max_t2_iterations: int = _safe_int(
-        os.getenv("MAX_T2_ITERATIONS", "0"), 0
+        os.getenv("MAX_T2_ITERATIONS", "1"), 1
     )
     # v110 — boolean wrapper over the existing ``discord_bot_token``
     # string field that asks "is the Discord bot configured?". The

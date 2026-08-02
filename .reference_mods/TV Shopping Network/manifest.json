@@ -1,0 +1,21 @@
+{
+    "Name": "TV Shopping Network",
+    "Author": "Airyn",
+    "Version": "1.0.1",
+    "Description": "Adds a TV Shopping Network channel where you can buy stuff.",
+    "UniqueID": "Airyn.TVSN",
+    "UpdateKeys": ["Nexus:45538"],
+    "ContentPackFor": {
+       "UniqueID": "Pathoschild.ContentPatcher"
+    },
+    "Dependencies": [
+        {
+            "UniqueID": "Astraios.BroadcastAPI",
+            "IsRequired": true
+        },
+        {
+            "UniqueID": "Esca.EMP",
+            "IsRequired": true
+        }
+    ]
+}

@@ -30,7 +30,9 @@ class TestRoute:
         phase, hint = route("replace the parsnip crop sprite")
         assert phase == "texture"
         assert hint["game"] == "stardew_valley"
-        assert hint["generators"] == ["texture_generator"]
+        # Manifest-first order since the MVP audit (texture was
+        # manifestless and produced unloadable zips standalone).
+        assert hint["generators"] == ["manifest_generator", "texture_generator"]
 
     def test_shop_keyword_routing(self):
         phase, hint = route("add a shop to my stardew valley game")

@@ -104,7 +104,11 @@ async def run_t2(request_id: str, outputs: dict[str, GeneratorOutput]) -> T2Resu
 
         avg_score = sum(r.score for r in panel_results) // len(panel_results)
         passed_count = sum(1 for r in panel_results if r.passed)
-        panel_passed = passed_count >= T2_PANEL_PASS_COUNT
+        # With the 3-judge panel, >= 2 judges must pass. If the
+        # t2_three_judge_panel flag reduced the panel to a single judge,
+        # that judge's verdict decides (the 2-of-3 quorum is impossible).
+        required_passes = min(T2_PANEL_PASS_COUNT, len(panel_results))
+        panel_passed = passed_count >= required_passes
 
         aggregate_feedback = _aggregate_feedback(panel_results)
 
@@ -134,18 +138,34 @@ async def run_t2(request_id: str, outputs: dict[str, GeneratorOutput]) -> T2Resu
 
 
 async def _run_judge_panel(request_id: str, outputs: dict[str, GeneratorOutput], client: Any) -> list[JudgeResult]:
-    """Run all 3 judges in parallel and return their individual results."""
+    """Run the judge panel in parallel and return their individual results.
+
+    Honors the ``t2_three_judge_panel`` feature flag: when an operator
+    pins the flag off, a single judge (technical compliance — the persona
+    whose failure mode is most visible in a broken zip) runs instead of
+    the full 3-judge panel. The flag was defined and toggled in tests but
+    never read here — an operational kill switch that did nothing.
+    """
+    from orchestrator.feature_flags import is_enabled
+
     summary = _build_mod_summary(outputs)
+
+    personas: list[dict[str, str]]
+    if is_enabled("t2_three_judge_panel"):
+        personas = list(JUDGE_PERSONAS.values())
+    else:
+        logger.info("quality.t2.single_judge", request_id=request_id)
+        personas = [JUDGE_PERSONAS["technical_compliance"]]
 
     tasks = [
         _llm_judge(request_id, summary, client, persona)
-        for persona in JUDGE_PERSONAS.values()
+        for persona in personas
     ]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     panel: list[JudgeResult] = []
-    for persona, result in zip(JUDGE_PERSONAS.values(), results):
+    for persona, result in zip(personas, results):
         if isinstance(result, Exception):
             logger.warning("quality.t2.judge_error", judge=persona["name"], error=str(result))
             continue
@@ -255,7 +275,15 @@ def _parse_judge_response(response: str) -> tuple[int, str]:
             try:
                 score = max(0, min(10, int(m.group(1))))
             except ValueError:
-                pass
+                # Regex matched a non-integer (e.g. a float like "7.5"
+                # inside prose) — surface it instead of silently zeroing
+                # the score. A misparsed judge response must be visible,
+                # not quietly turn into a 0 → T2 fail → ship-it fallback.
+                logger.warning(
+                    "quality.t2.score_fallback_parse_failed",
+                    token=m.group(1),
+                    response_head=stripped[:200],
+                )
 
     if not feedback:
         feedback = stripped[-200:] if stripped else response.strip()[:200]

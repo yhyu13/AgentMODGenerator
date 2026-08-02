@@ -6,6 +6,9 @@ from typing import Any, Protocol, runtime_checkable
 
 import anthropic
 import openai
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 class RateLimitError(Exception):
@@ -122,7 +125,15 @@ class OpenAIClient:
             output_schema(**result)
             return result
         except Exception as exc:
-            pass  # Fall through to fallback
+            # Schema-fallback path must be observable: an SDK 4xx/5xx is
+            # conflated with content problems only when someone can see it.
+            # Previously a bare ``except: pass`` hid every failure here.
+            logger.warning(
+                "llm.structured_output_primary_failed",
+                provider="openai",
+                error=str(exc)[:200],
+                error_type=type(exc).__name__,
+            )
 
         # Fallback: use schema in prompt, no response_format constraint
         return await self._complete_with_fallback(prompt, output_schema, system, **kwargs)

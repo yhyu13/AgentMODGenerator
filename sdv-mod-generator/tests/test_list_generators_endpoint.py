@@ -139,7 +139,10 @@ class TestListGeneratorsEndpoint:
         result = await list_generators(
             game="stardew_valley", phase="custom_crafting",
         )
-        assert len(result.generators) == 3
+        # 4 since the MVP audit: the shared ManifestGenerator was added
+        # to the previously-manifestless custom_crafting phase.
+        assert len(result.generators) == 4
+        assert result.generators[0].name == "manifest_generator"
         for g in result.generators:
             assert g.game == "stardew_valley"
             assert g.phase == "custom_crafting"
@@ -182,13 +185,16 @@ class TestListGeneratorsEndpoint:
         assert "tricky_phase" in str(exc_info.value.detail)
 
     async def test_single_generator_phase(self) -> None:
-        # ``texture`` is a single-generator phase. Pinned so a
-        # future expansion to multiple generators is deliberate.
+        # ``texture`` was a single-generator phase; the MVP audit added
+        # the shared ManifestGenerator (the phase produced manifest-less
+        # zips before). Pinned so a future expansion is deliberate.
         result = await list_generators(
             game="stardew_valley", phase="texture",
         )
-        assert len(result.generators) == 1
-        assert result.generators[0].name == "texture_generator"
+        assert len(result.generators) == 2
+        assert result.generators[0].name == "manifest_generator"
         assert result.generators[0].execution_position == 0
-        assert result.generators[0].game == "stardew_valley"
-        assert result.generators[0].phase == "texture"
+        assert result.generators[1].name == "texture_generator"
+        assert result.generators[1].execution_position == 1
+        assert result.generators[1].game == "stardew_valley"
+        assert result.generators[1].phase == "texture"

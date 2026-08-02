@@ -1,8 +1,28 @@
 """Texture replacement generator for Stardew Valley."""
+import zlib
+
 from pydantic import BaseModel
 
 from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
 from llm.client import get_client
+
+
+def _make_png(width: int, height: int, r: int, g: int, b: int) -> bytes:
+    """Generate a minimal valid PNG (32-bit RGBA solid color) using stdlib only."""
+    def png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
+        return len(data).to_bytes(4, "big") + chunk_type + data + crc.to_bytes(4, "big")
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr_data = width.to_bytes(4, "big") + height.to_bytes(4, "big") + bytes([8, 6, 0, 0, 0])
+    ihdr = png_chunk(b"IHDR", ihdr_data)
+
+    raw_row = bytes([0] + [r, g, b, 255] * width)
+    raw_data = b"".join(raw_row for _ in range(height))
+    compressed = zlib.compress(raw_data, 9)
+    idat = png_chunk(b"IDAT", compressed)
+    iend = png_chunk(b"IEND", b"")
+    return signature + ihdr + idat + iend
 
 
 class _SourceRect(BaseModel):
@@ -35,6 +55,11 @@ Respond with valid JSON."""
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
         llm_prompt = f'User wants to replace texture: {inp["prompt"]}\nReturn JSON with sprite_sheet, source_rect, target_file, target_rect.'
+
+        # Emit the fallback sprite the content.json references. The old
+        # generator referenced @/assets/custom_sprite.png but never
+        # produced it — SDV showed a missing-asset error at load time.
+        out.add_file("assets/custom_sprite.png", _make_png(16, 16, 96, 128, 200))
 
         try:
             client = get_client()

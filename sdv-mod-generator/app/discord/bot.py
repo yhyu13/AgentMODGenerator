@@ -27,6 +27,28 @@ def get_notifier() -> CompletionNotifier | None:
     return _notifier
 
 
+def _extract_prompt_from_message(content: str) -> str | None:
+    """Decide whether a chat message is a free-form mod request.
+
+    Returns the prompt to pipeline (the trimmed message) or ``None`` when
+    the message should not trigger generation: empty, a command (``!`` /
+    ``/`` prefixes — slash commands are handled by the tree), a greeting,
+    or too short to be a mod description (20-char heuristic avoids firing
+    on casual chat).
+
+    Extracted from the ``on_message`` handler so the intake rules are
+    unit-testable without a live Discord gateway connection.
+    """
+    content = content.strip()
+    if not content or content.startswith(("!", "/")):
+        return None
+    if content.lower() in ("hi", "hello", "hey", "你好", "嗨"):
+        return None
+    if len(content) < 20:
+        return None
+    return content
+
+
 def _patch_http_for_proxy() -> None:
     """Patch discord.py HTTP client to use proxy from environment."""
     import aiohttp
@@ -113,11 +135,45 @@ async def start_bot() -> None:
         logger.info("discord.message.received", author=str(message.author), content=message.content)
         if message.author.bot:
             return
-        content = message.content.lower().strip()
-        if content in ("hi", "hello", "hey", "你好", "嗨"):
-            await message.channel.send(
-                "Hello! I'm Agent Mod 0x01. Use `/generate <prompt>` to create a Stardew Valley mod."
+        prompt = _extract_prompt_from_message(message.content)
+        if prompt is None:
+            if message.content.strip().lower() in ("hi", "hello", "hey", "你好", "嗨"):
+                await message.channel.send(
+                    "Hello! I'm Agent Mod 0x01. Use `/generate <prompt>` or just describe your mod "
+                    "in chat to create a Stardew Valley mod."
+                )
+            return
+        # Free-form intake: any non-trivial message is treated as a mod
+        # request. The request reuses the same background-pipeline +
+        # DM-notifier path as /generate.
+        user_id = str(message.author.id)
+        request_id = f"req_{uuid.uuid4().hex[:12]}"
+        logger.info(
+            "discord.message.pipeline_triggered",
+            request_id=request_id,
+            user_id=user_id,
+            prompt=prompt,
+        )
+        try:
+            await redis_set_status(request_id, "pending")
+            await set_notification_target(
+                request_id,
+                user_id=user_id,
+                channel_id=message.channel.id,
             )
+            run_pipeline_background(request_id, user_id, prompt)
+            await message.channel.send(
+                f"Started generating your mod! Request ID: `{request_id}`\n"
+                "I'll DM you a link when it's ready. Use `/status {request_id}` to check progress."
+            )
+        except Exception as exc:
+            logger.error(
+                "discord.message.pipeline_error",
+                request_id=request_id,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            await message.channel.send(f"Failed to start generation: {exc}")
 
     @_bot.tree.command(
         name="generate",
@@ -218,6 +274,14 @@ async def start_bot() -> None:
             return
 
         await redis_set_status(request_id, "cancelled")
+        from orchestrator.pipeline import cancel_pipeline_task
+
+        if not cancel_pipeline_task(request_id):
+            logger.info(
+                "discord.cancel.no_task",
+                request_id=request_id,
+                previous_status=current_status,
+            )
         logger.info(
             "discord.cancel.done",
             request_id=request_id,

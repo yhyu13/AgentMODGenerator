@@ -724,7 +724,10 @@ class ContentJsonGenerator(BaseGenerator):
             content_action.update(action)
             content_json.append(content_action)
 
-        out.add_file("content.json", content_json)
+        out.add_file("content.json", {
+            "Format": "1.29.0",
+            "Changes": content_json,
+        })
         out.metadata["mod_id"] = mod_id
         out.metadata["actions_count"] = len(content_json)
         return out
@@ -735,12 +738,16 @@ class ContentJsonGenerator(BaseGenerator):
         if not content:
             errors.append("content_json_generator: content.json missing")
             return errors
-        if not isinstance(content, list):
-            errors.append("content_json_generator: content.json must be an array")
-        else:
-            for i, action in enumerate(content):
-                if not isinstance(action, dict):
-                    errors.append(f"content_json_generator: action[{i}] is not a dict")
-                elif "Action" not in action:
-                    errors.append(f"content_json_generator: action[{i}] missing 'Action' field")
+        if not isinstance(content, dict):
+            errors.append("content_json_generator: content.json must be an object root (Format/Changes)")
+            return errors
+        changes = content.get("Changes")
+        if not isinstance(changes, list):
+            errors.append("content_json_generator: content.json missing 'Changes' array")
+            return errors
+        for i, action in enumerate(changes):
+            if not isinstance(action, dict):
+                errors.append(f"content_json_generator: action[{i}] is not a dict")
+            elif "Action" not in action:
+                errors.append(f"content_json_generator: action[{i}] missing 'Action' field")
         return errors

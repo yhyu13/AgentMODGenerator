@@ -122,12 +122,28 @@ class TestValidateZipContents:
         errors = validate_zip_contents(p)
         assert any("i18n/default.json" in e for e in errors)
 
-    def test_backslash_in_path_caught(self, tmp_path):
+    def test_backslash_in_path_caught(self):
+        # Python's zipfile normalizes backslashes on write, so a literal
+        # backslash entry can't be produced through writestr — exercise
+        # the entry-name check directly (zips written by external Windows
+        # tools can contain raw backslashes).
+        from tests.smapi_validate import _validate_entry_names
+        errors = _validate_entry_names({"manifest.json", "back\\slash.json"})
+        assert any("backslash" in e for e in errors)
+
+    def test_doubled_separator_caught(self):
+        from tests.smapi_validate import _validate_entry_names
+        errors = _validate_entry_names({"assets//x.png"})
+        assert any("doubled separator" in e for e in errors)
+
+    def test_i18n_comments_accepted_like_smapi(self, tmp_path):
+        # SMAPI parses i18n JSON with comments enabled; the reference mod
+        # ships ``//For translators:`` comments in its own i18n file.
         p = _make_zip(tmp_path, {
             "manifest.json": {
                 "Name": "X", "Author": "Y", "Version": "1.0.0", "UniqueID": "X.Y",
             },
-            "back\\slash.json": "{}",
+            "i18n/default.json": '{\n  "Channel.Name": "TV Shop", //For translators: keep short\n}',
         })
         errors = validate_zip_contents(p)
-        assert any("backslash" in e for e in errors)
+        assert errors == [], errors

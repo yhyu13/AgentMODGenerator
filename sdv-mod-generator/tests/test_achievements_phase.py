@@ -32,7 +32,12 @@ _ACHIEVEMENT_GENERATORS = (
     AchievementRewardGenerator,
     AchievementContentJsonGenerator,
 )
+# The shared ManifestGenerator (added in the MVP audit — the phase was
+# manifestless and produced unloadable zips standalone) runs first so the
+# ContentJsonGenerator's ``prior.get("manifest_generator")`` lookup works
+# in isolation.
 _ACHIEVEMENT_NAMES = (
+    "manifest_generator",
     "achievement_definition_generator",
     "achievement_reward_generator",
     "achievement_content_json_generator",
@@ -56,9 +61,8 @@ class TestAchievementsPackRegistration:
         order = [g.name for g in pg.generators]
         assert order == list(_ACHIEVEMENT_NAMES), (
             f"Pack's get_generators('achievements') order = {order}, "
-            f"expected the 3-generator "
-            f"Definition→Reward→ContentJson order so each generator "
-            f"can consume the prior's output"
+            f"expected the 4-generator Manifest→Definition→Reward→ContentJson "
+            f"order so each generator can consume the prior's output"
         )
 
 

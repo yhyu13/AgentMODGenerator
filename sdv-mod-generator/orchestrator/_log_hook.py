@@ -53,13 +53,27 @@ def emit_pipeline_log(request_id: str, level: str, event: str, **fields: Any) ->
                 message=str(fields.get("message", "")) if "message" in fields else "",
                 extra=fields,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            # A real Redis outage during a request must look like "logging
+            # broken", not "no logs". Previously swallowed with bare
+            # ``except: pass`` — a silent black hole for pipeline logs.
+            logger.warning(
+                "pipeline_log.redis_append_failed",
+                request_id=request_id,
+                log_event=event,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
 
     try:
         loop.create_task(_append_async())
-    except RuntimeError:
-        pass
+    except RuntimeError as exc:
+        logger.warning(
+            "pipeline_log.no_running_loop",
+            request_id=request_id,
+            log_event=event,
+            error=str(exc),
+        )
 
 
 async def emit_pipeline_log_async(
@@ -84,5 +98,11 @@ async def emit_pipeline_log_async(
             message=str(fields.get("message", "")) if "message" in fields else "",
             extra=fields,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "pipeline_log.redis_append_failed",
+            request_id=request_id,
+            log_event=event,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )

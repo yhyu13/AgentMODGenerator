@@ -620,6 +620,19 @@ async def cancel_mod(request_id: str) -> dict:
         )
 
     await redis_set_status(request_id, "cancelled")
+    # Real cancellation — stop the running pipeline task, not just the
+    # status key. Before the request_id → Task registry existed, the
+    # pipeline kept running to completion (LLM quota, S3 writes, and a
+    # final "done" DM for a request the user cancelled).
+    from orchestrator.pipeline import cancel_pipeline_task
+
+    task_cancelled = cancel_pipeline_task(request_id)
+    if not task_cancelled:
+        logger.info(
+            "api.cancel.no_task",
+            request_id=request_id,
+            previous_status=current_status,
+        )
     # Write the reason. The literal "user_cancelled" is the value we
     # want recorded — assigning `await set_cancellation_reason(...)`
     # (which returns None, because set_cancellation_reason is a writer)
@@ -1288,7 +1301,7 @@ async def preview_route(
     )
 
 
-@router.get("/feature_flags", response_model=FeatureFlagsResponse)
+@router.get("/feature_flags", response_model=FeatureFlagsResponse, dependencies=[Depends(verify_api_key)])
 async def get_feature_flags() -> FeatureFlagsResponse:
     """List all registered feature flags and their current state.
 
@@ -1339,7 +1352,7 @@ async def get_feature_flags() -> FeatureFlagsResponse:
     return FeatureFlagsResponse(flags=flags, count=len(flags))
 
 
-@router.get("/feature_flags/history", response_model=FlagHistoryResponse)
+@router.get("/feature_flags/history", response_model=FlagHistoryResponse, dependencies=[Depends(verify_api_key)])
 async def get_feature_flag_history(
     flag_name: Annotated[
         str | None,
@@ -1450,6 +1463,7 @@ async def get_feature_flag_history(
 @router.post(
     "/feature_flags/{name}",
     response_model=FeatureFlagChangeResponse,
+    dependencies=[Depends(verify_api_key)],
 )
 async def update_feature_flag(
     name: str,
@@ -1565,6 +1579,7 @@ async def update_feature_flag(
 @router.post(
     "/feature_flags/{name}/rollback",
     response_model=FeatureFlagRollbackResponse,
+    dependencies=[Depends(verify_api_key)],
 )
 async def rollback_feature_flag(name: str) -> FeatureFlagRollbackResponse:
     """Roll back the most recent real change to a single feature flag.
@@ -1724,6 +1739,7 @@ async def rollback_feature_flag(name: str) -> FeatureFlagRollbackResponse:
 @router.post(
     "/feature_flags/{name}/pin",
     response_model=FeatureFlagPinResponse,
+    dependencies=[Depends(verify_api_key)],
 )
 async def pin_feature_flag(name: str) -> FeatureFlagPinResponse:
     """Pin a single feature flag so future mutations are rejected.
@@ -1846,6 +1862,7 @@ async def pin_feature_flag(name: str) -> FeatureFlagPinResponse:
 @router.post(
     "/feature_flags/{name}/unpin",
     response_model=FeatureFlagPinResponse,
+    dependencies=[Depends(verify_api_key)],
 )
 async def unpin_feature_flag(name: str) -> FeatureFlagPinResponse:
     """Remove the pin on a single feature flag so mutations succeed again.
@@ -1971,6 +1988,7 @@ async def unpin_feature_flag(name: str) -> FeatureFlagPinResponse:
 @router.get(
     "/feature_flags/{name}/pin",
     response_model=FeatureFlagPinStateResponse,
+    dependencies=[Depends(verify_api_key)],
 )
 async def get_feature_flag_pin_state(name: str) -> FeatureFlagPinStateResponse:
     """Read the current pin state of a single feature flag.
@@ -2090,6 +2108,7 @@ async def get_feature_flag_pin_state(name: str) -> FeatureFlagPinStateResponse:
 @router.get(
     "/feature_flags/pins",
     response_model=FeatureFlagPinsResponse,
+    dependencies=[Depends(verify_api_key)],
 )
 async def get_feature_flag_pins() -> FeatureFlagPinsResponse:
     """List every currently-pinned feature flag (collection view).
@@ -3136,7 +3155,7 @@ def _build_t2_judges_from_redis(
     )
 
 
-@router.get("/mods/{request_id}/t2_judges", response_model=T2JudgesResponse)
+@router.get("/mods/{request_id}/t2_judges", response_model=T2JudgesResponse, dependencies=[Depends(verify_api_key)])
 async def get_mod_t2_judges(request_id: str) -> T2JudgesResponse:
     """Return the per-iteration T2 judge history for a request.
 
@@ -3459,19 +3478,34 @@ async def list_mods(
     # envelope can drive a "Page 1 of N" UI without a second round-trip.
     # We issue it in parallel with the page query via ``asyncio.gather``
     # so the latency cost is one round-trip, not two.
-    rows, total = await asyncio.gather(
-        list_mod_requests(
-            user_id=user_id,
-            status=status_filter,
-            limit=limit,
-            offset=offset,
-            sort=sort,
-        ),
-        count_mod_requests(
-            user_id=user_id,
-            status=status_filter,
-        ),
-    )
+    try:
+        rows, total = await asyncio.gather(
+            list_mod_requests(
+                user_id=user_id,
+                status=status_filter,
+                limit=limit,
+                offset=offset,
+                sort=sort,
+            ),
+            count_mod_requests(
+                user_id=user_id,
+                status=status_filter,
+            ),
+        )
+    except (ConnectionError, OSError, RuntimeError, asyncio.TimeoutError) as exc:
+        # Database unavailable — surface 503 (not 500) so load balancers
+        # and the /health probe can distinguish "down" from "bug". The
+        # middleware's access log already records the failure; re-raising
+        # here would turn every DB outage into an unhandled 500.
+        logger.warning(
+            "api.mods.db_unavailable",
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable",
+        ) from exc
 
     items: list[ModListItem] = []
     for row in rows:
@@ -3945,7 +3979,7 @@ def _build_log_entries(raw_entries: list[dict]) -> list[LogEntry]:
     return out
 
 
-@router.get("/mods/{request_id}/logs", response_model=ModLogsResponse)
+@router.get("/mods/{request_id}/logs", response_model=ModLogsResponse, dependencies=[Depends(verify_api_key)])
 async def get_mod_logs(
     request_id: str,
     limit: int = Query(

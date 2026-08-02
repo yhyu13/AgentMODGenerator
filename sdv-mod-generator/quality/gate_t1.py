@@ -211,13 +211,33 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
         content = output.files.get("content.json")
         if not content:
             errors.append("content_json_generator: content.json missing")
-        elif not isinstance(content, list):
-            errors.append("content_json_generator: content.json must be an array of actions")
-        else:
+        elif isinstance(content, dict):
+            # CP 2.x object root — the shape every generator pack emits.
+            # The pre-fix gate only accepted a bare list, which both
+            # codified shop_channel's malformed output AND rejected the
+            # CP 2.x object root the reference mod uses.
+            if "Format" not in content:
+                errors.append("content_json_generator: content.json object root missing 'Format'")
+            changes = content.get("Changes")
+            if not isinstance(changes, list):
+                errors.append("content_json_generator: content.json object root missing 'Changes' array")
+            else:
+                for i, action in enumerate(changes):
+                    if not isinstance(action, dict):
+                        errors.append(f"content_json_generator: content.json Changes[{i}] is not an object")
+                    elif "Action" not in action:
+                        errors.append(f"content_json_generator: content.json Changes[{i}] missing 'Action' field")
+        elif isinstance(content, list):
+            # Legacy CP 1.x bare-array root — tolerated but deprecated.
             for i, action in enumerate(content):
                 if not isinstance(action, dict):
                     errors.append(f"content_json_generator: content.json[{i}] is not an object")
                 elif "Action" not in action:
                     errors.append(f"content_json_generator: content.json[{i}] missing 'Action' field")
+        else:
+            errors.append(
+                f"content_json_generator: content.json must be a JSON object or array "
+                f"(got {type(content).__name__})"
+            )
 
     return errors

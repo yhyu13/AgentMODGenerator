@@ -56,7 +56,9 @@ class TestNodeRoute:
         )
         result = node_route(state)
         assert result.phase == "texture"
-        assert result.generators == ["texture_generator"]
+        # Manifest-first order since the MVP audit (texture was
+        # manifestless and produced unloadable zips standalone).
+        assert result.generators == ["manifest_generator", "texture_generator"]
 
 
 class TestNodeGenerate:
@@ -178,6 +180,7 @@ class TestNodePackage:
 
     @pytest.mark.asyncio
     async def test_package_fails_on_absolute_asset_path(self):
+        import os
         from generators.core import GeneratorOutput
         state = PipelineState(
             request_id="req_abs_asset",
@@ -188,7 +191,16 @@ class TestNodePackage:
         )
         out = GeneratorOutput()
         out.add_file("manifest.json", {"Format": "1.29.0"})
-        out.add_asset("/etc/passwd")
+        # A path that is absolute on the running platform: /etc/passwd on
+        # POSIX, a Windows system file on nt. /etc/passwd is NOT absolute
+        # under ntpath, so the packager's isabs check wouldn't fire.
+        if os.name == "nt":
+            absolute_asset = os.path.abspath(
+                os.path.join(os.environ.get("WINDIR", "C:/Windows"), "win.ini")
+            )
+        else:
+            absolute_asset = "/etc/passwd"
+        out.add_asset(absolute_asset)
         state.outputs = {"manifest_generator": out}
         result = await node_package(state)
         assert result.status == "failed"

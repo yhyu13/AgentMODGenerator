@@ -3,6 +3,14 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
+# The script under test is a POSIX bash script; it cannot run on Windows.
+pytestmark = pytest.mark.skipif(
+    os.name == "nt",
+    reason="deploy_local.sh is a bash script (POSIX only)",
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy_local.sh"
 COMPOSE_FILE = REPO_ROOT / "config" / "docker-compose.prod.yml"
@@ -16,13 +24,13 @@ def test_deploy_script_exists_and_is_executable() -> None:
 
 def test_compose_prod_file_exists() -> None:
     assert COMPOSE_FILE.exists()
-    text = COMPOSE_FILE.read_text()
+    text = COMPOSE_FILE.read_text(encoding="utf-8")
     for svc in ("postgres", "redis", "minio", "minio-init", "api"):
         assert f"  {svc}:" in text, f"service {svc!r} missing from docker-compose.prod.yml"
 
 
 def test_compose_prod_uses_minio_for_s3() -> None:
-    text = COMPOSE_FILE.read_text()
+    text = COMPOSE_FILE.read_text(encoding="utf-8")
     assert "minio" in text
     # S3 endpoint should default to minio
     assert "S3_ENDPOINT_URL" in text
@@ -30,7 +38,7 @@ def test_compose_prod_uses_minio_for_s3() -> None:
 
 
 def test_dockerfile_has_healthcheck() -> None:
-    text = DOCKERFILE.read_text()
+    text = DOCKERFILE.read_text(encoding="utf-8")
     assert "HEALTHCHECK" in text
     assert "/health/deep" in text
     assert "EXPOSE 8000" in text

@@ -1,0 +1,1024 @@
+{
+    "Format": "2.9.0",
+    "ConfigSchema": {
+        "RealismMode": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "Adds a low chance to receive junk instead of the item you purchased, with a slightly convoluted way of getting a refund afterward."
+        }
+    },
+	"DynamicTokens": [
+		{
+			"Name": "TVSNRandomItem",
+			"Value": "{{Random:{{Range:1,100}}|key=TVSNItems}}"
+		},
+		{
+			"Name": "TVSNItemPrice",
+			"Value": "{{Random:11899,4899,19899,3499,6499,6499,3499,3499,1899,2899,1899,1499,4899,4899,4999,1799,1899,1899,5899,4199,4899,7499,4699,1699,8799,6499,7499,6499,4599,3499,3499,6499,1999,3899,1999,2399,1299,2499,2199,899,1199,1199,1499,3299,2699,1699,2899,2899,1299,1599,2899,1799,2399,3899,1899,4399,3699,3699,2499,1699,799,3899,2899,2899,899,1299,6599,899,699,899,1499,6799,2899,6799,1699,6599,7899,4699,64990,1799,16990,16990,16990,17990,1299,1899,24990,24990,21990,799,12990,12990,1399,1899,1699,4399,9899,7899,1799,1799|key=TVSNItems}}"
+		},
+		{
+			"Name": "TVSNRandomItem2",
+			"Value": "{{Random:{{Range:1,33}}}}"
+		},
+		{
+			"Name": "TVSNRandomItem2",
+			"Value": "{{Random:{{Range:34,66}}}}",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 1 33": "true"
+			}
+		},
+		{
+			"Name": "TVSNRandomItem2",
+			"Value": "{{Random:{{Range:67,100}}}}",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 34 66": "true"
+			}
+		},
+		{
+			"Name": "TVSNRandomItem3",
+			"Value": "{{Random:{{Range:34,66}}}}"
+		},
+		{
+			"Name": "TVSNRandomItem3",
+			"Value": "{{Random:{{Range:67,100}}}}",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 1 33": "true"
+			}
+		},
+		{
+			"Name": "TVSNRandomItem3",
+			"Value": "{{Random:{{Range:1,33}}}}",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 34 66": "true"
+			}
+		},
+		{
+			"Name": "TVSNCatalogueRandom1",
+			"Value": "{{Random:{{Esca.EMP/PlayerStat: TVShoppingNetworkItem}},{{Esca.EMP/PlayerStat: TVShoppingNetworkFakeItem2}},{{Esca.EMP/PlayerStat: TVShoppingNetworkFakeItem3}}|key=TVSN}}"
+		},
+		{
+			"Name": "TVSNCatalogueRandom2",
+			"Value": "{{Random:{{Esca.EMP/PlayerStat: TVShoppingNetworkFakeItem2}},{{Esca.EMP/PlayerStat: TVShoppingNetworkFakeItem3}},{{Esca.EMP/PlayerStat: TVShoppingNetworkItem}}|key=TVSN}}"
+		},
+		{
+			"Name": "TVSNCatalogueRandom3",
+			"Value": "{{Random:{{Esca.EMP/PlayerStat: TVShoppingNetworkFakeItem3}},{{Esca.EMP/PlayerStat: TVShoppingNetworkItem}},{{Esca.EMP/PlayerStat: TVShoppingNetworkFakeItem2}}|key=TVSN}}"
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)298 20",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 1": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": ""
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)298 20",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 1": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)621 10",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 2": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)621 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 3": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)24 2 %% %item id (BC)16 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 4": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)FishSmoker 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 5": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)Dehydrator 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 6": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)163 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 7": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)15 2 %% %item id (BC)12 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 8": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)369 20",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 9": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)919 10",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 10": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)805 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 11": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)495 5 %% %item id (O)496 5 %% %item id (O)497 5 %% %item id (O)498 5 %% %item id (O)770 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 12": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)BlueGrassStarter 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 13": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)MysticTreeSeed 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 14": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)292 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 15": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)687 1 %% %item id (O)695 1 %% %item id (O)693 1 %% %item id (O)692 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 16": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)856 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 17": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)908 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 18": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)ChallengeBait 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 19": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)710 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 20": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)527 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 21": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)773 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 22": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)872 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 23": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)688 1 %% %item id (O)689 1 %% %item id (O)690 1 %% %item id (O)261 1 %% %item id (O)886 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 24": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)TreasureTotem 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 25": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)21 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 26": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)HeavyFurnace 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 27": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)231 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 28": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)264 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 29": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)DeluxeWormBin 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 30": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)MushroomLog 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 31": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)BaitMaker 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 32": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)130 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 33": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)BigStoneChest 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 34": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)37 3 %% %item id (BC)38 3 %% %item id (BC)39 3 %% %item id (BC)TextSign 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 35": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)62 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 36": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)8 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 37": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)926 3 %% %item id (O)TentKit 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 38": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)725 3 %% %item id (O)724 3 %% %item id (O)726 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 39": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)634 3 %% %item id (O)638 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 40": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)635 3 %% %item id (O)636 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 41": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)613 3 %% %item id (O)637 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 42": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)834 3 %% %item id (O)91 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 43": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)9 4",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 44": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)536 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 45": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)312 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 46": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)DesertTable 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 47": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)WizardTable 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 48": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)WalnutLampEndTable 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 49": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1400 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 50": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)JunimoTeaTable 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 51": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1285 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 52": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)LargeWizardBookcase 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 53": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)704 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 54": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)RetroFireplace 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 55": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1664 1 %% %item id (F)1978 1 %% %item id (F)2488 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 56": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)2870 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 57": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)StarryMoonRug 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 58": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F){{Random:Blue,Yellow,Green,Red,Brown,Black,GrayJoja,Joja,Wizard,DarkWizard,Junimo,DarkJunimo,Retro,DarkRetro}}Cushion 1 %% %item id (F){{Random:Yellow,Green,Red,Brown,Black,GrayJoja,Joja,Wizard,DarkWizard,Junimo,DarkJunimo,Retro,DarkRetro,Blue}}Cushion %% %item id (F){{Random:Green,Red,Brown,Black,GrayJoja,Joja,Wizard,DarkWizard,Junimo,DarkJunimo,Retro,DarkRetro,Blue,Yellow}}Cushion 1 %% %item id (F){{Random:Red,Brown,Black,GrayJoja,Joja,Wizard,DarkWizard,Junimo,DarkJunimo,Retro,DarkRetro,Blue,Yellow,Green}}Cushion 1 %% %item id (F){{Random:Brown,Black,GrayJoja,Joja,Wizard,DarkWizard,Junimo,DarkJunimo,Retro,DarkRetro,Blue,Yellow,Green,Red}}Cushion 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 59": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)2734 4",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 60": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1443 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 61": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1468 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 62": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)2064 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 63": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)2508 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 64": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F){{Random:1376,1377,1378,1379,1380,1381,1382,1383,1384,1385,1386,1387,1388,1389,1390}} 1 %% %item id (F){{Random:1378,1379,1380,1381,1382,1383,1384,1385,1386,1387,1388,1389,1390,1376,1377}} 1 %% %item id (F){{Random:1380,1381,1382,1383,1384,1385,1386,1387,1388,1389,1390,1376,1377,1378,1379}} 1 %% %item id (F){{Random:1382,1383,1384,1385,1386,1387,1388,1389,1390,1376,1377,1378,1379,1380,1381}} 1 %% %item id (F){{Random:1384,1385,1386,1387,1388,1389,1390,1376,1377,1378,1379,1380,1381,1382,1383}} 1 %%",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 65": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)986 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 66": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)915 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 67": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)FancyTree{{Random:1,2,3}} 1 %% %item id (F)FancyTree{{Random:1,2,3}} 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 68": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1601 1 %% %item id (F)1604 1 %% %item id (F)1602 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 69": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1550 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 70": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1844 1 %% %item id (F)1975 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 71": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1915 1 %% %item id (F)1914 2 %% %item id (F)1916 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 72": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)746 3 %% %item id (F)1917 1 %% %item id (F)1918 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 73": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)ChickenDecal 1 %% %item id (F)CowDecal 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 74": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)2304 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 75": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)913 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 76": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)DecorativeSword 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 77": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)1971 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 78": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)UprightPiano 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 79": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)ElegantVase 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 80": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)Book_Mystery 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 81": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)Book_Artifact 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 82": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (F)Book_Void 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 83": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (M)Mannequin{{PlayerGender}} 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 84": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (M)CursedMannequin{{PlayerGender}} 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 84": "true",
+                "Random:{{Range:1,20}}": "1"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)52 1 %% %item id (BC)54 1 %% %item id (BC)53 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 85": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)RiverJelly 2 %% %item id (O)CaveJelly 2 %% %item id (O)SeaJelly 2 %% %item id (O)344 2",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 86": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)117 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 87": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)272 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 88": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (BC)165 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 89": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)586 1 %% %item id (O)587 1 %% %item id (O)588 1 %% %item id (O)589 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 90": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O){{Random:538,539,540,541,542,543,544,545,546,547,548,549,550,551,552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578}} 1 %% %item id (O){{Random:540,541,542,543,544,545,546,547,548,549,550,551,552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578,538,539}} 1 %% %item id (O){{Random:542,543,544,545,546,547,548,549,550,551,552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578,538,539,540,541}} 1 %% %item id (O){{Random:544,545,546,547,548,549,550,551,552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578,538,539,540,541,542,543}} 1 %% %item id (O){{Random:546,547,548,549,550,551,552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578,538,539,540,541,542,543,544,545}} 1 %% %item id (O){{Random:548,549,550,551,552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578,538,539,540,541,542,543,544,545,546,547}} 1 %% %item id (O){{Random:550,551,552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578,538,539,540,541,542,543,544,545,546,547,548,549}} 1 %% %item id (O){{Random:552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578,538,539,540,541,542,543,544,545,546,547,548,549,550,551}} 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 91": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (TR)MagicHairDye 1 %% %item id (S)1998 1 %% %item id (P)998 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 92": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (TR)FrogEgg 1 %% %item id (H)78 1 %% %item id (B)505 1 %% %item id (S)1012 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 93": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (W)43 1 %% %item id (H)76 1 %% %item id (F)1900 1 %% %item id (S)1214 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 94": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (W)3 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 95": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)64 1 %% %item id (O)68 1 %% %item id (O)70 1 %% %item id (O)60 1 %% %item id (O)62 1 %% %item id (O)66 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 96": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)74 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 97": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (H)0 1 %% %item id (S)1131 1 %% %item id (B)515 1",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 98": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)536 3 %% %item id (O)537 3",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 99": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O)749 5",
+			"When": {
+				"Esca.EMP/GameStateQuery: PLAYER_STAT Current TVShoppingNetworkItem 100": "true"
+			}
+		},
+		{
+			"Name": "TVSNItemID",
+			"Value": "%item id (O){{ModId}}_Junk 1",
+			"When": {
+				"RealismMode": "true",
+                "Random:{{Range:1,20}}": "1"
+			}
+		},
+		{
+			"Name": "TVSNRefundQuest",
+			"Value": ""
+		},
+		{
+			"Name": "TVSNRefundQuest",
+			"Value": "%action AddSpecialOrder TVSN_JunkRefund%% %action MarkCraftingRecipeKnown Current {{ModId}}_Receipt true%%",
+			"When": {
+				"RealismMode": "true",
+                "TVSNItemID": "%item id (O){{ModId}}_Junk 1"
+			}
+		}
+	],
+    "Changes": [
+		{
+      		"LogName": "Load Letter Background",
+      		"Action": "Load",
+      		"Target": "Mods/{{ModId}}/TVSNLetterBackground",
+      		"FromFile": "Assets/TVSNLetterBackground.png"
+    	},
+        {
+			"LogName": "Load Channel Icon",
+            "Action": "Load",
+            "Target": "{{ModId}}/TVSNChannelIcon",
+            "FromFile": "Assets/{{TargetWithoutPath}}.png"
+        },
+        {
+			"LogName": "Add Item Image to Channel Icon",
+            "Action": "EditImage",
+            "Target": "{{ModId}}/TVSNChannelIcon",
+            "FromFile": "Assets/Items/item_{{Esca.EMP/PlayerStat: TVShoppingNetworkItem}}.png",
+			"ToArea": { "X": 168, "Y": 0, "Width": 168, "Height": 28 },
+			"PatchMode": "Overlay"
+        },
+        {
+			"LogName": "Add Item Image to Catalogue 1",
+            "Action": "EditImage",
+            "Target": "Mods/{{ModId}}/TVSNLetterBackground",
+            "FromFile": "Assets/Items/item_{{TVSNCatalogueRandom1}}.png",
+			"ToArea": { "X": 59, "Y": 110, "Width": 42, "Height": 28 },
+			"FromArea": { "X": 0, "Y": 0, "Width": 42, "Height": 28 },
+			"PatchMode": "Overlay"
+        },
+        {
+			"LogName": "Add Item Image to Catalogue 2",
+            "Action": "EditImage",
+            "Target": "Mods/{{ModId}}/TVSNLetterBackground",
+            "FromFile": "Assets/Items/item_{{TVSNCatalogueRandom2}}.png",
+			"ToArea": { "X": 139, "Y": 110, "Width": 42, "Height": 28 },
+			"FromArea": { "X": 0, "Y": 0, "Width": 42, "Height": 28 },
+			"PatchMode": "Overlay"
+        },
+        {
+			"LogName": "Add Item Image to Catalogue 3",
+            "Action": "EditImage",
+            "Target": "Mods/{{ModId}}/TVSNLetterBackground",
+            "FromFile": "Assets/Items/item_{{TVSNCatalogueRandom3}}.png",
+			"ToArea": { "X": 219, "Y": 110, "Width": 42, "Height": 28 },
+			"FromArea": { "X": 0, "Y": 0, "Width": 42, "Height": 28 },
+			"PatchMode": "Overlay"
+        },
+        {
+            "Action": "EditData",
+            "Target": "Astraios.BroadcastAPI/CustomChannels",
+            "Entries": {
+                "{{ModId}}_TVShoppingNetwork": {
+                    "Name": "{{ModId}}_TVShoppingNetwork",
+                    "Displayname": "{{i18n:TVShoppingNetwork.ChannelName}}",
+                    "Dialogues": [
+                        "{{i18n:TVShoppingNetwork.ChannelText.Intro}}",
+                        "{{i18n:TVShoppingNetwork.ChannelText.Start}}",
+                        "{{i18n:TVShoppingNetwork.ChannelText.ItemDescription.{{Esca.EMP/PlayerStat: TVShoppingNetworkItem}}}}",
+                        "{{i18n:TVShoppingNetwork.ChannelText.Price|ItemPrice={{TVSNItemPrice}}}}",
+                        "{{i18n:TVShoppingNetwork.ChannelText.SalesTalk}}"
+                    ],
+                    "EQuestions": {
+                        "Question": "{{i18n:TVShoppingNetwork.ChannelText.Purchase|ItemName={{i18n:TVShoppingNetwork.ItemName.{{Esca.EMP/PlayerStat: TVShoppingNetworkItem}}}}}}",
+                        "Answers": [
+                            {
+                                "Text": "{{i18n:TVShoppingNetwork.ChannelText.Purchase.Yes}}",
+                                "Actions": [
+									"If PLAYER_CURRENT_MONEY Current {{TVSNItemPrice}} ## AddMail Current {{ModId}}_TVShoppingNetworkMail tomorrow",
+									"If PLAYER_CURRENT_MONEY Current {{TVSNItemPrice}} ## AddMail Current TVShoppingNetworkMailingList received",
+									"If PLAYER_CURRENT_MONEY Current {{TVSNItemPrice}} ## AddMoney -{{TVSNItemPrice}}",
+                                    "IncrementStat TVShoppingNetworkRefund {{Round: {{Query: ({{TVSNItemPrice}} / 100) * 80}}}}",
+									"AddMail Current TVShoppingNetworkFlag received"
+                                ],
+                                "NextChannel": [
+									"If PLAYER_HAS_MAIL Current {{ModId}}_TVShoppingNetworkMail tomorrow ## {{ModID}}_TVShoppingNetworkPurchased",
+                                    "{{ModID}}_TVShoppingNetworkNotEnough"
+                                ]
+                            },
+                            {
+                                "Text": "{{i18n:TVShoppingNetwork.ChannelText.Purchase.No}}",                                
+                                "Actions": [
+                                    "AddMail Current TVShoppingNetworkFlag received"
+                                ]
+                            }
+                        ]
+                    },
+                    "Texture": "{{ModId}}/TVSNChannelIcon",
+                    "SpriteRegion": {
+                        "X": 0,
+                        "Y": 0,
+                        "Width": 42,
+                        "Height": 28
+                    },
+                    "AnimationLength": 12,
+                    "AnimationInterval": 400.0,
+                    "HideFromMenu": true,
+                    "Conditions": [
+                        "DAY_OF_WEEK Saturday, !PLAYER_HAS_MAIL Current TVShoppingNetworkFlag received"
+                    ]
+                },
+                "{{ModId}}_TVShoppingNetworkPurchased": {
+                    "Name": "{{ModId}}_TVShoppingNetworkPurchased",
+                    "Displayname": "{{i18n:TVShoppingNetwork.ChannelName}}",
+                    "Dialogues": [
+                        "{{i18n:TVShoppingNetwork.ChannelText.Purchase.Thanks}}"
+                    ],
+                    "Texture": "{{ModId}}/TVSNChannelIcon",
+                    "SpriteRegion": {
+                        "X": 0,
+                        "Y": 0,
+                        "Width": 42,
+                        "Height": 28
+                    },
+                    "AnimationLength": 12,
+                    "AnimationInterval": 400.0,
+                    "HideFromMenu": true
+                },
+                "{{ModId}}_TVShoppingNetworkNotEnough": {
+                    "Name": "{{ModId}}_TVShoppingNetwork",
+                    "Displayname": "{{i18n:TVShoppingNetwork.ChannelName}}",
+                    "Dialogues": [
+                        "{{i18n:TVShoppingNetwork.ChannelText.Purchase.NotEnough}}"
+                    ],
+                    "Texture": "{{ModId}}/TVSNChannelIcon",
+                    "SpriteRegion": {
+                        "X": 0,
+                        "Y": 0,
+                        "Width": 42,
+                        "Height": 28
+                    },
+                    "AnimationLength": 12,
+                    "AnimationInterval": 400.0,
+                    "HideFromMenu": true
+                },
+                "{{ModId}}_TVShoppingNetworkSoldOut": {
+                    "Name": "{{ModId}}_TVShoppingNetworkSoldOut",
+                    "Displayname": "{{i18n:TVShoppingNetwork.ChannelName}}",
+                    "Dialogues": [
+                        "{{i18n:TVShoppingNetwork.ChannelText.Intro}}",
+                        "{{i18n:TVShoppingNetwork.ChannelText.SoldOut}}"
+                    ],
+                    "Texture": "{{ModId}}/TVSNChannelIcon",
+                    "SpriteRegion": {
+                        "X": 0,
+                        "Y": 0,
+                        "Width": 42,
+                        "Height": 28
+                    },
+                    "AnimationLength": 12,
+                    "AnimationInterval": 400.0,
+                    "HideFromMenu": true,
+                    "Conditions": [
+                        "DAY_OF_WEEK Saturday, PLAYER_HAS_MAIL Current TVShoppingNetworkFlag received"
+                    ]
+                }
+            }
+        },
+		{
+			"LogName": "TV Shopping Network Triggers",
+			"Action": "EditData",
+			"Target": "Data/TriggerActions",
+			"Entries": {
+                "{{ModId}}_TVShoppingNetwork_Initial": {
+                    "Id": "{{ModId}}_TVShoppingNetwork_Initial",
+                    "Trigger": "DayStarted",
+                    "Actions": [
+						"IncrementStat TVShoppingNetworkItem {{TVSNRandomItem}}"
+                    ]
+                },
+                "{{ModId}}_TVShoppingNetwork_Reset": {
+                    "Id": "{{ModId}}_TVShoppingNetwork_Reset",
+                    "Trigger": "DayStarted",
+					"Condition": "DAY_OF_WEEK Tuesday",
+                    "Actions": [
+                        "RemoveMail Current TVShoppingNetworkFlag all",
+                        "RemoveMail Current {{ModId}}_TVShoppingNetworkMail all",
+                        "IncrementStat TVShoppingNetworkRefund -9999",
+                        "IncrementStat TVShoppingNetworkItem -999",
+						"IncrementStat TVShoppingNetworkItem {{TVSNRandomItem}}",
+						"IncrementStat TVShoppingNetworkFakeItem2 -999",
+						"IncrementStat TVShoppingNetworkFakeItem2 {{TVSNRandomItem2}}",
+						"IncrementStat TVShoppingNetworkFakeItem3 -999",
+						"IncrementStat TVShoppingNetworkFakeItem3 {{TVSNRandomItem3}}"
+                    ],
+					"MarkActionApplied": false
+                },
+                "{{ModId}}_TVShoppingNetwork_MailingList": {
+                    "Id": "{{ModId}}_TVShoppingNetwork_MailingList",
+                    "Trigger": "DayStarted",
+					"Condition": "DAY_OF_WEEK Wednesday, PLAYER_HAS_MAIL Current TVShoppingNetworkMailingList received",
+                    "Actions": [
+                        "RemoveMail Current {{ModId}}_TVShoppingNetworkMailingList received",
+                        "AddMail Current {{ModId}}_TVShoppingNetworkMailingList now"
+                    ],
+					"MarkActionApplied": false
+                }
+			}
+		},
+        {
+            "LogName": "TV Shopping Network Letters",
+            "Action": "EditData",
+            "Target": "Data/Mail",
+            "Entries": {
+				"{{ModId}}_TVShoppingNetworkMail": "{{i18n: TVShoppingNetwork.Letter.Description |ItemName={{i18n:TVShoppingNetwork.ItemName.{{Esca.EMP/PlayerStat: TVShoppingNetworkItem}}}}}}{{TVSNItemID}} %%{{TVSNRefundQuest}}[letterbg Mods\\{{ModId}}\\TVSNLetterBackground 1][#]{{i18n: TVShoppingNetwork.Letter.Title}}",
+				"{{ModId}}_TVShoppingNetworkMailingList": "{{i18n: TVShoppingNetwork.MailingList.Description|TVSN_RandomItem1={{i18n:TVShoppingNetwork.ItemName.{{TVSNCatalogueRandom1}}}}|TVSN_RandomItem2={{i18n:TVShoppingNetwork.ItemName.{{TVSNCatalogueRandom2}}}}|TVSN_RandomItem3={{i18n:TVShoppingNetwork.ItemName.{{TVSNCatalogueRandom3}}}}}}[letterbg Mods\\{{ModId}}\\TVSNLetterBackground 0][#]{{i18n: TVShoppingNetwork.MailingList.Title}}"
+            }
+        },
+		{
+			"LogName": "Realism Mode Code",
+			"Action": "Include",
+			"FromFile": "Data/RealismMode.json",
+			"When": {
+				"RealismMode": "True"
+			}
+		}
+    ]
+}
