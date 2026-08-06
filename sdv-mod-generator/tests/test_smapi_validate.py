@@ -77,6 +77,78 @@ class TestValidateContentJson:
         assert any("Target" in e for e in errors)
 
 
+class TestValidateContentJsonCpSchema:
+    """CP load-warning class the .test demo mods surfaced at real-game load time."""
+
+    def test_invalid_when_token_rejected(self):
+        errors = validate_content_json([
+            {"Action": "Load", "Target": "Data/X", "FromFile": "x.json", "When": {"DayOfMonth": 6}},
+        ])
+        assert any("DayOfMonth" in e for e in errors)
+
+    def test_mailreceived_token_rejected(self):
+        errors = validate_content_json([
+            {"Action": "Load", "Target": "Data/X", "FromFile": "x.json", "When": {"MailReceived": "k"}},
+        ])
+        assert any("MailReceived" in e for e in errors)
+
+    def test_valid_when_tokens_pass(self):
+        errors = validate_content_json([
+            {"Action": "Load", "Target": "Data/X", "FromFile": "x.json", "When": {"Season": "Spring", "HasMod": "X.Y"}},
+        ])
+        assert errors == []
+
+    def test_prefixed_mod_when_token_passes(self):
+        errors = validate_content_json([
+            {"Action": "Load", "Target": "Data/X", "FromFile": "x.json", "When": {"<Custom.ModID>/Flag": True}},
+        ])
+        assert errors == []
+
+    def test_config_schema_field_as_when_token_passes(self):
+        errors = validate_content_json({
+            "Format": "2.9.0",
+            "ConfigSchema": {"RealismMode": {"AllowValues": "true, false", "Default": "true"}},
+            "Changes": [
+                {"Action": "Load", "Target": "Data/X", "FromFile": "x.json", "When": {"RealismMode": "True"}},
+            ],
+        })
+        assert errors == []
+
+    def test_dynamic_token_as_when_token_passes(self):
+        errors = validate_content_json({
+            "Format": "2.9.0",
+            "DynamicTokens": [{"Name": "TVSNItemID", "Value": "x"}],
+            "Changes": [
+                {"Action": "Load", "Target": "Data/X", "FromFile": "x.json", "When": {"TVSNItemID": "x"}},
+            ],
+        })
+        assert errors == []
+
+    def test_token_with_args_when_key_passes(self):
+        errors = validate_content_json([
+            {"Action": "Load", "Target": "Data/X", "FromFile": "x.json", "When": {"Random:{{Range:1,20}}": "1"}},
+        ])
+        assert errors == []
+
+    def test_editdata_with_fromfile_rejected(self):
+        errors = validate_content_json([
+            {"Action": "EditData", "Target": "Data/X", "FromFile": "x.json"},
+        ])
+        assert any("'EditData' can't have 'FromFile'" in e for e in errors)
+
+    def test_editmap_missing_position_rejected(self):
+        errors = validate_content_json([
+            {"Action": "EditMap", "Target": "Maps/Farm", "MapTiles": [{"Layer": "Back", "X": 1, "Y": 1}]},
+        ])
+        assert any("Position" in e for e in errors)
+
+    def test_editmap_with_position_passes(self):
+        errors = validate_content_json([
+            {"Action": "EditMap", "Target": "Maps/Farm", "MapTiles": [{"Position": "5 5", "Layer": "Back"}]},
+        ])
+        assert errors == []
+
+
 class TestValidateZipContents:
     def test_valid_mod_passes(self, tmp_path):
         p = _make_zip(tmp_path, {
@@ -147,3 +219,28 @@ class TestValidateZipContents:
         })
         errors = validate_zip_contents(p)
         assert errors == [], errors
+
+    def test_invalid_when_token_fails_zip_validation(self, tmp_path):
+        p = _make_zip(tmp_path, {
+            "manifest.json": {
+                "Name": "X", "Author": "Y", "Version": "1.0.0", "UniqueID": "X.Y",
+            },
+            "content.json": [
+                {"Action": "Load", "Target": "Data/X", "FromFile": "x.json", "When": {"DayOfMonth": 6}},
+            ],
+            "x.json": '{"key":"value"}',
+        })
+        errors = validate_zip_contents(p)
+        assert any("DayOfMonth" in e for e in errors)
+
+    def test_editmap_missing_position_fails_zip_validation(self, tmp_path):
+        p = _make_zip(tmp_path, {
+            "manifest.json": {
+                "Name": "X", "Author": "Y", "Version": "1.0.0", "UniqueID": "X.Y",
+            },
+            "content.json": [
+                {"Action": "EditMap", "Target": "Maps/Farm", "MapTiles": [{"Layer": "Back"}]},
+            ],
+        })
+        errors = validate_zip_contents(p)
+        assert any("Position" in e for e in errors)

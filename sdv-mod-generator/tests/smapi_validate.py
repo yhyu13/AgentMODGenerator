@@ -11,6 +11,12 @@ the failure modes that surface as '[SMAPI] this mod failed to load':
     (the format emitted by every generator pack and the reference mod
     ``.reference_mods/TV Shopping Network/``)
   - CP 1.x legacy array root: ``[{Action: ...}, ...]``
+- content.json per-change CP-schema checks: ``When`` keys must be known
+  ConditionType tokens (shared whitelist from ``quality.gate_t1``),
+  the mod's own ConfigSchema fields / DynamicTokens, mod-prefixed
+  keys (``ModID/...``) or token-with-args keys (``Random:...``);
+  ``EditData`` actions can't carry ``FromFile``, and ``EditMap``
+  ``MapTiles`` entries must include ``Position``
 - All 'FromFile' paths in content.json exist inside the zip (tokenized
   paths containing ``{{...}}`` are treated as dynamic and skipped)
 - i18n files parse as JSON
@@ -24,6 +30,8 @@ import re
 import sys
 import zipfile
 from pathlib import Path
+
+from quality.gate_t1 import VALID_CP_WHEN_TOKENS
 
 REQUIRED_MANIFEST_FIELDS = ["Name", "Author", "Version", "UniqueID"]
 CP_REQUIRED_ACTION_FIELDS = ["Action"]
@@ -153,7 +161,43 @@ def validate_manifest(manifest: dict) -> list[str]:
     return errors
 
 
-def _validate_actions(actions: list, errors: list[str]) -> None:
+def _cp_known_when_keys(content_data: object) -> frozenset[str]:
+    """Collect additional valid ``When`` keys declared in the content root.
+
+    CP lets a change's ``When`` reference the mod's own ``ConfigSchema``
+    field names and ``DynamicTokens`` names (the reference mod uses both,
+    e.g. ``RealismMode`` / ``TVSNItemID``). These aren't ConditionType
+    tokens, so the whitelist alone would false-positive on valid mods.
+    """
+    known: set[str] = set()
+    if isinstance(content_data, dict):
+        config = content_data.get("ConfigSchema")
+        if isinstance(config, dict):
+            known.update(config)
+        dynamic_tokens = content_data.get("DynamicTokens")
+        if isinstance(dynamic_tokens, list):
+            for entry in dynamic_tokens:
+                if isinstance(entry, dict):
+                    name = entry.get("Name")
+                    if isinstance(name, str):
+                        known.add(name)
+    return frozenset(known)
+
+
+def _is_valid_when_token(token: str, known_keys: frozenset[str]) -> bool:
+    """Whether a ``When`` key is a valid CP condition reference."""
+    if "/" in token:  # mod-defined token (``Esca.EMP/...``, ``<ModID>/...``)
+        return True
+    if token in VALID_CP_WHEN_TOKENS:
+        return True
+    if token in known_keys:  # ConfigSchema field / DynamicToken name
+        return True
+    # Token-with-arguments form (``Random:{{Range:1,20}}``).
+    base, sep, _ = token.partition(":")
+    return bool(sep) and base in VALID_CP_WHEN_TOKENS
+
+
+def _validate_actions(actions: list, errors: list[str], known_when_keys: frozenset[str] = frozenset()) -> None:
     """Validate a list of CP change objects (shared by both root shapes)."""
     valid_actions = {
         "Load", "EditData", "EditImage", "EditMap", "Include", "Exit",
@@ -173,6 +217,30 @@ def _validate_actions(actions: list, errors: list[str]) -> None:
             errors.append(f"content.json: action[{i}] 'Load' missing 'FromFile'")
         if action["Action"] == "EditData" and "Target" not in action and "Targets" not in action:
             errors.append(f"content.json: action[{i}] 'EditData' missing 'Target' or 'Targets'")
+        # CP load-warning class that only surfaced at real-game load time
+        # (7/10 .test demo mods): invalid When tokens, EditData+FromFile,
+        # and EditMap MapTiles without Position.
+        when = action.get("When")
+        if isinstance(when, dict):
+            for token in when:
+                if _is_valid_when_token(token, known_when_keys):
+                    continue
+                errors.append(
+                    f"content.json: action[{i}] has invalid CP When token '{token}'"
+                )
+        if action["Action"] == "EditData" and "FromFile" in action:
+            errors.append(
+                f"content.json: action[{i}] 'EditData' can't have 'FromFile' "
+                "(FromFile is only valid on Load/EditImage)"
+            )
+        if action["Action"] == "EditMap":
+            map_tiles = action.get("MapTiles")
+            if isinstance(map_tiles, list):
+                for j, tile in enumerate(map_tiles):
+                    if isinstance(tile, dict) and not tile.get("Position"):
+                        errors.append(
+                            f"content.json: action[{i}] 'EditMap' MapTiles[{j}] missing 'Position'"
+                        )
 
 
 def validate_content_json(content_data: object) -> list[str]:
@@ -185,6 +253,7 @@ def validate_content_json(content_data: object) -> list[str]:
     validator previously failed the product's own MVP bar.
     """
     errors: list[str] = []
+    known_when_keys = _cp_known_when_keys(content_data)
 
     if isinstance(content_data, dict):
         changes = content_data.get("Changes")
@@ -193,14 +262,14 @@ def validate_content_json(content_data: object) -> list[str]:
             return errors
         if "Format" not in content_data:
             errors.append("content.json: object root missing 'Format' field")
-        _validate_actions(changes, errors)
+        _validate_actions(changes, errors, known_when_keys)
         return errors
 
     if not isinstance(content_data, list):
         errors.append(f"content.json: must be a JSON object (Format/Changes) or array, got {type(content_data).__name__}")
         return errors
 
-    _validate_actions(content_data, errors)
+    _validate_actions(content_data, errors, known_when_keys)
     return errors
 
 

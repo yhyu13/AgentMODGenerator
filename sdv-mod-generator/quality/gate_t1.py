@@ -24,6 +24,11 @@ Design notes:
   config schema presence, trigger-actions shape, mail-file presence,
   content.json action array). The generic file-level checks live in
   ``_validate_file`` and run for every file regardless of generator.
+* **Content Patcher schema.** ``_validate_file`` additionally runs
+  per-change CP-schema checks on ``content.json`` (When-token
+  whitelist, no ``EditData`` + ``FromFile``, ``EditMap`` MapTiles
+  must carry ``Position``) — catching the load-warning class the .test
+  demo mods surfaced only at real-game load time.
 
 The ``run_t1`` entry point is the only public symbol the rest of
 the project is expected to import; everything else is internal and
@@ -36,6 +41,28 @@ from dataclasses import dataclass, field
 from generators.base import GeneratorOutput
 
 logger = structlog.get_logger(__name__)
+
+#: Authoritative Content Patcher ``When`` condition keys, from CP source
+#: ``ContentPatcher/Framework/Conditions/ConditionType.cs``. Matched
+#: exactly; prefixed keys containing ``/`` (``Esca.EMP/...``,
+#: ``<ModID>/...``) are accepted as mod-defined tokens.
+VALID_CP_WHEN_TOKENS: frozenset[str] = frozenset({
+    "Day", "DayEvent", "DayOfWeek", "DaysPlayed", "Season", "Year", "Weather",
+    "HasActiveQuest", "HasCaughtFish", "HasCookingRecipe", "HasCraftingRecipe",
+    "HasConversationTopic", "HasFlag", "HasProfession", "HasReadLetter",
+    "HasSeenEvent", "HasVisitedLocation", "DailyLuck", "HasDialogueAnswer",
+    "HasWalletItem", "IsMainPlayer", "IsOutdoors", "LocationContext",
+    "LocationName", "LocationOwnerId", "LocationUniqueName", "PlayerGender",
+    "PlayerName", "PreferredPet", "SkillLevel", "ChildNames", "ChildGenders",
+    "Hearts", "Relationship", "Roommate", "Spouse", "FarmCave",
+    "FarmhouseUpgrade", "FarmMapAsset", "FarmName", "FarmType",
+    "IsCommunityCenterComplete", "IsJojaMartComplete", "HavingChild",
+    "Pregnant", "Time", "Count", "Query", "Range", "Round", "Lowercase",
+    "Merge", "PathPart", "Random", "Render", "Uppercase", "FirstValidFile",
+    "HasMod", "HasFile", "HasValue", "I18n", "Language", "ModId",
+    "AbsoluteFilePath", "FormatAssetName", "InternalAssetKey", "FromFile",
+    "Target", "TargetWithoutPath", "TargetPathOnly",
+})
 
 
 @dataclass
@@ -104,6 +131,11 @@ def _validate_file(gen_name: str, file_path: str, content: dict | list | str) ->
                             f"{gen_name}: {file_path} parsed but is not a JSON object or array "
                             f"(got {type(parsed).__name__})"
                         )
+                    elif file_path == "content.json":
+                        errors.extend(
+                            f"{gen_name}: {file_path} {e}"
+                            for e in _validate_content_json_schema(parsed)
+                        )
                 except json.JSONDecodeError:
                     errors.append(f"{gen_name}: {file_path} is not valid JSON")
             else:
@@ -117,6 +149,11 @@ def _validate_file(gen_name: str, file_path: str, content: dict | list | str) ->
                     f"{gen_name}: {file_path} is not a JSON object or array "
                     f"(got {type(content).__name__})"
                 )
+        elif file_path == "content.json":
+            errors.extend(
+                f"{gen_name}: {file_path} {e}"
+                for e in _validate_content_json_schema(content)
+            )
     elif file_path.endswith(".tsv"):
         if isinstance(content, str):
             # ``content.strip().split("\n")`` always yields >= 1 element
@@ -131,6 +168,104 @@ def _validate_file(gen_name: str, file_path: str, content: dict | list | str) ->
         else:
             errors.append(f"{gen_name}: {file_path} expected TSV string, got {type(content).__name__}")
 
+    return errors
+
+
+def _cp_known_when_keys(content: dict | list) -> frozenset[str]:
+    """Collect additional valid ``When`` keys declared in the content root.
+
+    CP lets a change's ``When`` reference the mod's own ``ConfigSchema``
+    field names and ``DynamicTokens`` names (the reference mod uses both,
+    e.g. ``RealismMode`` / ``TVSNItemID``). These aren't ConditionType
+    tokens, so the whitelist alone would false-positive on valid mods.
+    """
+    known: set[str] = set()
+    if isinstance(content, dict):
+        config = content.get("ConfigSchema")
+        if isinstance(config, dict):
+            known.update(config)
+        dynamic_tokens = content.get("DynamicTokens")
+        if isinstance(dynamic_tokens, list):
+            for entry in dynamic_tokens:
+                if isinstance(entry, dict):
+                    name = entry.get("Name")
+                    if isinstance(name, str):
+                        known.add(name)
+    return frozenset(known)
+
+
+def _is_valid_when_token(token: str, known_keys: frozenset[str]) -> bool:
+    """Whether a ``When`` key is a valid CP condition reference."""
+    if "/" in token:  # mod-defined token (``Esca.EMP/...``, ``<ModID>/...``)
+        return True
+    if token in VALID_CP_WHEN_TOKENS:
+        return True
+    if token in known_keys:  # ConfigSchema field / DynamicToken name
+        return True
+    # Token-with-arguments form (``Random:{{Range:1,20}}``).
+    base, sep, _ = token.partition(":")
+    return bool(sep) and base in VALID_CP_WHEN_TOKENS
+
+
+def _validate_cp_change(change: dict, known_keys: frozenset[str]) -> list[str]:
+    """Static Content Patcher schema checks for one content.json change.
+
+    Catches the CP load-warning class the old gates missed (7/10 .test
+    demo mods passed T1 yet produced CP load warnings at real-game load
+    time): invalid ``When`` tokens, ``EditData`` + ``FromFile`` combos,
+    and ``EditMap`` ``MapTiles`` entries missing ``Position``. Pure /
+    no LLM, matching the gate's design contract.
+    """
+    errors: list[str] = []
+    action_type = change.get("Action")
+
+    when = change.get("When")
+    if isinstance(when, dict):
+        for token in when:
+            if _is_valid_when_token(token, known_keys):
+                continue
+            errors.append(
+                f"invalid CP When token '{token}' (not in ConditionType whitelist)"
+            )
+
+    if action_type == "EditData" and "FromFile" in change:
+        errors.append(
+            "'EditData' can't have 'FromFile' (FromFile is only valid on Load/EditImage)"
+        )
+
+    if action_type == "EditMap":
+        map_tiles = change.get("MapTiles")
+        if isinstance(map_tiles, list):
+            for j, tile in enumerate(map_tiles):
+                if isinstance(tile, dict) and not tile.get("Position"):
+                    errors.append(f"EditMap MapTiles[{j}] missing 'Position'")
+
+    return errors
+
+
+def _validate_content_json_schema(content: dict | list) -> list[str]:
+    """Run :func:`_validate_cp_change` over every change in a content.json root.
+
+    Accepts both the CP 2.x object root (``Format`` / ``Changes``) and
+    the legacy CP 1.x bare-array root. Errors carry the change index so
+    operators can locate the offending action.
+    """
+    errors: list[str] = []
+    known_keys = _cp_known_when_keys(content)
+    if isinstance(content, dict):
+        changes = content.get("Changes")
+        if isinstance(changes, list):
+            for i, change in enumerate(changes):
+                if isinstance(change, dict):
+                    errors.extend(
+                        f"Changes[{i}] {e}" for e in _validate_cp_change(change, known_keys)
+                    )
+    elif isinstance(content, list):
+        for i, change in enumerate(content):
+            if isinstance(change, dict):
+                errors.extend(
+                    f"content.json[{i}] {e}" for e in _validate_cp_change(change, known_keys)
+                )
     return errors
 
 
