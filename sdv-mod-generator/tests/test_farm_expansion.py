@@ -192,6 +192,53 @@ class TestFarmExpansionContentJsonGenerator:
         assert out.metadata["mod_id"] == "test.farmexpansion"
 
     @pytest.mark.asyncio
+    async def test_editmap_tiles_have_position(self):
+        gen = FarmExpansionContentJsonGenerator()
+        manifest_out = GeneratorOutput()
+        manifest_out.add_file("manifest.json", {"UniqueID": "Test.FarmExpansion"})
+        map_out = GeneratorOutput()
+        map_out.add_file("assets/data/map_edits.json", {
+            "edits": [
+                {
+                    "EditType": "AddTile",
+                    "TargetMap": "Farm",
+                    "Layer": "Back",
+                    "X": 60,
+                    "Y": 20,
+                    "TileIndex": 0,
+                    "TileSheet": "spring_outdoorsTileSheet",
+                },
+                {
+                    "EditType": "AddTile",
+                    "TargetMap": "Farm",
+                    "Layer": "Buildings",
+                    "X": 61,
+                    "Y": 20,
+                    "TileIndex": 1,
+                    "TileSheet": "spring_outdoorsTileSheet",
+                },
+            ]
+        })
+        inp = GeneratorInput(
+            prompt="Create a farm expansion mod",
+            prior_outputs={
+                "manifest_generator": manifest_out,
+                "building_generator": GeneratorOutput(),
+                "warp_point_generator": GeneratorOutput(),
+                "map_edit_generator": map_out,
+            },
+        )
+        out = await gen.generate(inp)
+        content = out.files["content.json"]
+        editmap_changes = [c for c in content["Changes"] if c["Action"] == "EditMap"]
+        assert len(editmap_changes) >= 1
+        for change in editmap_changes:
+            for tile in change["MapTiles"]:
+                assert tile["Position"].strip() != ""
+                assert "X" not in tile
+                assert "Y" not in tile
+
+    @pytest.mark.asyncio
     async def test_content_json_with_empty_prior(self):
         gen = FarmExpansionContentJsonGenerator()
         inp = GeneratorInput(prompt="farm expansion")

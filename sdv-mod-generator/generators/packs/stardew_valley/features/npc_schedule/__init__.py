@@ -7,6 +7,8 @@ from generators.llm_utils import generate_structured, llm_system_prompt
 
 logger = structlog.get_logger()
 
+DEFAULT_NPC = "Linus"
+
 
 class NPCScheduleEntry(BaseModel):
     time: str = Field(validation_alias="Time")
@@ -36,7 +38,7 @@ class NPCGiftTasteOutput(BaseModel):
 
 
 def _sanitize_npc_name(name: str) -> str:
-    return "".join(c for c in name if c.isalnum() or c == "_") or "UnknownNPC"
+    return "".join(c for c in name if c.isalnum() or c == "_") or DEFAULT_NPC
 
 
 class NPCScheduleGenerator(BaseGenerator):
@@ -76,13 +78,13 @@ Respond with ONLY valid JSON matching the expected schema.'''
             out.metadata["schedule_entries"] = len(sched.schedule_entries)
         except (ValueError, RuntimeError, IOError, ValidationError) as exc:
             logger.error("npc_schedule_generator.failed", error=str(exc))
-            out.add_file("assets/schedules/UnknownNPC.json", {
-                "name": "UnknownNPC",
+            out.add_file(f"assets/schedules/{DEFAULT_NPC}.json", {
+                "name": DEFAULT_NPC,
                 "0800": "Farm 64 15",
                 "1200": "Town 44 68",
                 "1800": "FarmHouse 3 5",
             })
-            out.metadata["npc_name"] = "UnknownNPC"
+            out.metadata["npc_name"] = DEFAULT_NPC
             out.metadata["schedule_entries"] = 3
         return out
 
@@ -102,7 +104,7 @@ class NPCDialogueGenerator(BaseGenerator):
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
         prior = inp.get("prior_outputs", {})
-        npc_name = prior.get("npc_schedule_generator", GeneratorOutput()).metadata.get("npc_name", "UnknownNPC")
+        npc_name = prior.get("npc_schedule_generator", GeneratorOutput()).metadata.get("npc_name", DEFAULT_NPC)
 
         prompt = f'''Create dialogue lines for NPC "{npc_name}" in Stardew Valley based on: "{inp["prompt"]}"
 
@@ -155,7 +157,7 @@ class NPCGiftTasteGenerator(BaseGenerator):
     async def generate(self, inp: GeneratorInput) -> GeneratorOutput:
         out = GeneratorOutput()
         prior = inp.get("prior_outputs", {})
-        npc_name = prior.get("npc_schedule_generator", GeneratorOutput()).metadata.get("npc_name", "UnknownNPC")
+        npc_name = prior.get("npc_schedule_generator", GeneratorOutput()).metadata.get("npc_name", DEFAULT_NPC)
 
         prompt = f'''Generate gift taste preferences for NPC "{npc_name}" in Stardew Valley based on: "{inp["prompt"]}"
 
@@ -218,7 +220,7 @@ class NPCContentJsonGenerator(BaseGenerator):
         mod_id = manifest_data.get("UniqueID", "NPCScheduleMod").lower()
 
         schedule_gen = prior.get("npc_schedule_generator", GeneratorOutput())
-        npc_name = schedule_gen.metadata.get("npc_name", "UnknownNPC")
+        npc_name = schedule_gen.metadata.get("npc_name", DEFAULT_NPC)
         schedule_file = f"assets/schedules/{npc_name}.json"
 
         dialogue_gen = prior.get("npc_dialogue_generator", GeneratorOutput())
@@ -231,14 +233,14 @@ class NPCContentJsonGenerator(BaseGenerator):
 
         if schedule_file in schedule_gen.files:
             changes.append({
-                "Action": "EditData",
+                "Action": "Load",
                 "Target": f"Characters/Schedules/{npc_name}",
                 "FromFile": schedule_file,
             })
 
         if dialogue_file in dialogue_gen.files:
             changes.append({
-                "Action": "EditData",
+                "Action": "Load",
                 "Target": f"Characters/Dialogue/{npc_name}",
                 "FromFile": dialogue_file,
             })

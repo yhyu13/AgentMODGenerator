@@ -405,7 +405,7 @@ class FestivalContentJsonGenerator(BaseGenerator):
         # Add festival schedule data
         if schedule_file in schedule_gen.files:
             changes.append({
-                "Action": "EditData",
+                "Action": "Load",
                 "Target": f"Data/Festivals/{festival_name}",
                 "FromFile": schedule_file,
                 "When": {"Season": season, "Day": day},
@@ -414,7 +414,7 @@ class FestivalContentJsonGenerator(BaseGenerator):
         # Add festival shop
         if shop_file in shop_gen.files:
             changes.append({
-                "Action": "EditData",
+                "Action": "Load",
                 "Target": f"Data/Shops/{festival_name}_Shop",
                 "FromFile": shop_file,
                 "When": {"Season": season, "Day": day},
@@ -423,7 +423,7 @@ class FestivalContentJsonGenerator(BaseGenerator):
         # Add festival map NPC positions
         if map_file in map_gen.files:
             changes.append({
-                "Action": "EditData",
+                "Action": "Load",
                 "Target": f"Data/Festivals/{festival_name}_NPCs",
                 "FromFile": map_file,
                 "When": {"Season": season, "Day": day},
@@ -432,7 +432,7 @@ class FestivalContentJsonGenerator(BaseGenerator):
         # Add festival dialogue
         if dialogue_file in dialogue_gen.files:
             changes.append({
-                "Action": "EditData",
+                "Action": "Load",
                 "Target": f"Data/Festivals/{festival_name}_Dialogue",
                 "FromFile": dialogue_file,
                 "When": {"Season": season, "Day": day},
