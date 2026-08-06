@@ -77,18 +77,18 @@ class TestAchievementContentJsonPartialPriors:
         strings_change = _content(out)["Changes"][-1]
         assert "Custom.Achievements" in str(strings_change)
 
-    def test_achievements_missing_emits_rewards_and_strings_only(self) -> None:
-        # Rewards present, but achievements missing.
+    def test_achievements_missing_emits_no_changes(self) -> None:
+        # SDV 1.6's Data/Achievements has no reward fields, so the
+        # reward data cannot be represented in the asset — when only
+        # rewards are present (no achievement definitions) the
+        # content generator emits no EditData changes.
         reward = GeneratorOutput(files={"assets/achievements/rewards.json": {
             "rewards": [{"AchievementID": "100", "Gold": 1000}],
         }})
         out = asyncio.run(AchievementContentJsonGenerator().generate(_input(
             prior={"achievement_reward_generator": reward}
         )))
-        changes = _content(out)["Changes"]
-        assert len(changes) == 2
-        # No Data/Achievements defs block — only the rewards additive block.
-        assert [c["Target"] for c in changes].count("Data/Achievements") == 1
+        assert _content(out)["Changes"] == []
 
     def test_rewards_missing_emits_definitions_and_strings_only(self) -> None:
         ach = GeneratorOutput(files={"assets/achievements/achievements.json": {
@@ -102,7 +102,7 @@ class TestAchievementContentJsonPartialPriors:
         targets = [c["Target"] for c in changes]
         # Only 1 Data/Achievements block (the defs), no rewards block.
         assert targets.count("Data/Achievements") == 1
-        assert "Data/Strings/UI" in targets
+        assert "Strings/UI" in targets
 
     def test_malformed_achievement_entries_are_skipped(self) -> None:
         # Non-dict entries are skipped; empty AchievementID is sanitized
@@ -124,19 +124,42 @@ class TestAchievementContentJsonPartialPriors:
         assert len(ach_change["Entries"]) == 1
         assert "100" in ach_change["Entries"]
 
-    def test_empty_friendship_target_omitted_from_reward_entry(self) -> None:
-        # Empty FriendshipTarget must be omitted to keep the diff minimal.
-        reward = GeneratorOutput(files={"assets/achievements/rewards.json": {
-            "rewards": [
-                {"AchievementID": "100", "Gold": 1000, "FriendshipTarget": ""},
+    def test_achievement_entries_are_caret_delimited_strings(self) -> None:
+        # SDV 1.6's Data/Achievements is Dictionary<int, string>:
+        # every emitted entry value must be a caret-delimited string
+        # with the canonical 5 fields
+        # (Name^Description^display^prereq^hatIndex).
+        ach = GeneratorOutput(files={"assets/achievements/achievements.json": {
+            "achievements": [
+                {"AchievementID": "100", "Name": "First Harvest",
+                 "Description": "Harvest your very first crop.",
+                 "IconHint": "crops"},
+                {"AchievementID": "101", "Name": "Steady Hand",
+                 "Description": "Catch 10 fish of any kind.",
+                 "IconHint": "fishing"},
             ],
         }})
         out = asyncio.run(AchievementContentJsonGenerator().generate(_input(
-            prior={"achievement_reward_generator": reward}
+            prior={"achievement_definition_generator": ach}
         )))
-        reward_change = next(c for c in _content(out)["Changes"]
-                             if c["Target"] == "Data/Achievements" and c.get("Fields") == "Rewards")
-        assert "FriendshipTarget" not in reward_change["Entries"]["100"]
+        ach_change = next(c for c in _content(out)["Changes"]
+                          if c["Target"] == "Data/Achievements")
+        entries = ach_change["Entries"]
+        assert set(entries.keys()) == {"100", "101"}
+        for key, value in entries.items():
+            assert isinstance(value, str), (
+                f"Data/Achievements Entries[{key}] must be a str, "
+                f"got {type(value).__name__}"
+            )
+            fields = value.split("^")
+            assert len(fields) == 5, (
+                f"Data/Achievements Entries[{key}] must have 5 "
+                f"caret-delimited fields, got {len(fields)}: {value!r}"
+            )
+            assert fields[0] == "First Harvest" or fields[0] == "Steady Hand"
+            assert fields[2] == "true"
+            assert fields[3] == "-1"
+            assert int(fields[4]) >= 0
 
     def test_achievement_id_zero_is_sanitized_to_100(self) -> None:
         # Regression: id "0" → _clamp_id → "100" (lower bound).

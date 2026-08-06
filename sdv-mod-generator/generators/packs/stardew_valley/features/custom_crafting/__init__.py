@@ -47,6 +47,48 @@ def _sanitize_recipe_name(name: str) -> str:
     return "".join(c for c in name if c.isalnum() or c == "_") or "CustomRecipe"
 
 
+def _ingredients_field(ingredients: object) -> str:
+    """Build the space-delimited ``itemId count`` ingredient list.
+
+    SDV 1.6 recipe values split ingredients on spaces as ``id count``
+    pairs (ids may be vanilla object ids or item names). Each
+    ingredient in the list is formatted as ``name quantity``.
+    """
+    parts: list[str] = []
+    if not isinstance(ingredients, list):
+        return ""
+    for ing in ingredients:
+        if not isinstance(ing, dict):
+            continue
+        name = ing.get("ItemName", "")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        try:
+            quantity = max(1, int(ing.get("Quantity", 1)))
+        except (TypeError, ValueError):
+            quantity = 1
+        parts.append(f"{name.strip()} {quantity}")
+    return " ".join(parts)
+
+
+def _output_token(raw: object) -> str:
+    """Collapse a free-form output item name into a single token.
+
+    The recipe yield field is space-delimited ``id count`` pairs, so a
+    multi-word display name like ``Wood Bench`` would be misparsed as
+    two separate items. Collapse it to a single underscore token
+    (the custom output item is not registered in the game's item data,
+    so the exact token only needs to be unambiguous).
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return "Custom"
+    text = "".join(
+        c if (c.isalnum() or c == "_") else " " for c in raw
+    )
+    tokens = text.split()
+    return "_".join(tokens) if tokens else "Custom"
+
+
 class CraftingRecipeGenerator(BaseGenerator):
     name = "crafting_recipe_generator"
     phase = "custom_crafting"
@@ -215,18 +257,26 @@ class CraftingContentJsonGenerator(BaseGenerator):
             crafting_data = crafting_gen.files[crafting_file]
             if isinstance(crafting_data, dict) and crafting_data.get("recipes"):
                 for recipe in crafting_data["recipes"]:
-                    recipe_name = recipe.get("RecipeName", "unknown")
+                    if not isinstance(recipe, dict):
+                        continue
+                    recipe_name = _sanitize_recipe_name(
+                        str(recipe.get("RecipeName", "unknown"))
+                    )
+                    # SDV 1.6 Data/CraftingRecipes value layout:
+                    #   Ingredients/Field|Home/Outputs/bigCraftable/unlock
+                    # (index 1 is an unused Field-or-Home marker; the
+                    # yield and ingredients are space-delimited id pairs).
+                    raw_value = "/".join([
+                        _ingredients_field(recipe.get("Ingredients", [])),
+                        "Home",
+                        _output_token(recipe.get("OutputItem", "")),
+                        "false",
+                        "default",
+                    ])
                     changes.append({
                         "Action": "EditData",
                         "Target": "Data/CraftingRecipes",
-                        "Entries": {
-                            recipe_name: {
-                                "Ingredients": recipe.get("Ingredients", []),
-                                "OutputItem": recipe.get("OutputItem", ""),
-                                "OutputQuantity": recipe.get("OutputQuantity", 1),
-                                "SkillRequirement": recipe.get("SkillRequirement"),
-                            }
-                        },
+                        "Entries": {recipe_name: raw_value},
                     })
 
         cooking_file = "assets/data/cooking_recipes.json"
@@ -236,20 +286,27 @@ class CraftingContentJsonGenerator(BaseGenerator):
                 recipes_list = cooking_data.get("recipes", [])
                 if isinstance(recipes_list, list):
                     for recipe in recipes_list:
-                        if isinstance(recipe, dict):
-                            recipe_name = recipe.get("RecipeName", "unknown")
-                            changes.append({
-                                "Action": "EditData",
-                                "Target": "Data/CookingRecipes",
-                                "Entries": {
-                                    recipe_name: {
-                                        "Ingredients": recipe.get("Ingredients", []),
-                                        "OutputItem": recipe.get("OutputItem", ""),
-                                        "OutputQuantity": recipe.get("OutputQuantity", 1),
-                                        "Buffs": recipe.get("Buffs", {}),
-                                    }
-                                },
-                            })
+                        if not isinstance(recipe, dict):
+                            continue
+                        recipe_name = _sanitize_recipe_name(
+                            str(recipe.get("RecipeName", "unknown"))
+                        )
+                        # SDV 1.6 Data/CookingRecipes value layout:
+                        #   Ingredients/unused/Outputs/unlock
+                        # (index 1 is an unused pair of numbers; index 3
+                        # is the unlock condition — "default" learns the
+                        # recipe automatically).
+                        raw_value = "/".join([
+                            _ingredients_field(recipe.get("Ingredients", [])),
+                            "1 10",
+                            _output_token(recipe.get("OutputItem", "")),
+                            "default",
+                        ])
+                        changes.append({
+                            "Action": "EditData",
+                            "Target": "Data/CookingRecipes",
+                            "Entries": {recipe_name: raw_value},
+                        })
 
         out.add_file("content.json", {
             "Format": "1.29.0",
@@ -269,4 +326,25 @@ class CraftingContentJsonGenerator(BaseGenerator):
             errors.append("crafting_content_json_generator: content.json must be a dict")
         elif "Changes" not in content:
             errors.append("crafting_content_json_generator: Changes key missing")
+        else:
+            # SDV 1.6 stores recipe data as Dictionary<string, string>:
+            # every EditData entry value for the recipe targets must be a
+            # pipe-delimited string.
+            for change in content["Changes"]:
+                if not isinstance(change, dict):
+                    continue
+                if change.get("Target") not in (
+                    "Data/CraftingRecipes",
+                    "Data/CookingRecipes",
+                ):
+                    continue
+                entries = change.get("Entries")
+                if not isinstance(entries, dict):
+                    continue
+                for key, value in entries.items():
+                    if not isinstance(value, str):
+                        errors.append(
+                            "crafting_content_json_generator: "
+                            f"{change['Target']} Entries[{key}] not a string"
+                        )
         return errors

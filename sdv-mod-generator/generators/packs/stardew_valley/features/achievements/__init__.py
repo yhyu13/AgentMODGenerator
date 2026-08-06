@@ -13,10 +13,12 @@ Generates a self-contained Content Patcher mod that adds custom achievements
    registers the mod id.
 
 Stardew Valley's vanilla achievement system reads ``Data/Achievements`` at
-runtime. Each entry is keyed by a numeric-style id (``0``, ``1`` ... or a
-string id, depending on version) and includes ``Name``, ``Description``,
-and ``Icon`` fields. We use string ids to avoid collisions with the
-vanilla 35+ achievement slots.
+runtime. It is a ``Dictionary<int, string>``: each entry is keyed by a
+numeric-style id (``0``, ``1`` ... or a string id, depending on version) and
+the value is a caret-delimited string
+``Name^Description^showOnCollectionsPage^prerequisite^hatIndex``. We use
+numeric string ids to avoid collisions with the vanilla 35+ achievement
+slots.
 """
 from __future__ import annotations
 
@@ -43,6 +45,47 @@ _VALID_ICON_HINTS: set[str] = {
     "shipping", "monster", "npc", "golden", "walnut", "rabbit", "bear",
     "wizard", "krobus", "yoba", "dark", "clint", "abby", "leah",
 }
+
+
+# SDV 1.6 ``Data/Achievements`` raw value layout. Each entry value is a
+# caret-delimited string ``Name^Description^showOnCollectionsPage^
+# prerequisite^hatIndex`` (5 fields). The ``hatIndex`` field is the
+# index into ``Data/hats`` granted when the achievement is unlocked
+# (vanilla values are all non-negative hat indices). We map the
+# per-pack icon hints onto a stable set of valid hat indices 0-19.
+_ICON_HINT_HAT_INDEX: dict[str, int] = {
+    "crops": 0,
+    "fishing": 1,
+    "mining": 2,
+    "foraging": 3,
+    "cooking": 4,
+    "crafting": 5,
+    "shipping": 6,
+    "monster": 7,
+    "npc": 8,
+    "golden": 9,
+    "walnut": 10,
+    "rabbit": 11,
+    "bear": 12,
+    "wizard": 13,
+    "krobus": 14,
+    "yoba": 15,
+    "dark": 16,
+    "clint": 17,
+    "abby": 18,
+    "leah": 19,
+}
+
+
+def _sanitize_achievement_pipe(raw: object) -> str:
+    """Make an achievement text field safe for a caret-delimited value.
+
+    ``Data/Achievements`` splits values on ``^``, so any ``^`` or
+    ``/`` in the name/description would shift the later fields.
+    Replace them with ``-``.
+    """
+    text = "" if raw is None else str(raw)
+    return text.replace("^", "-").replace("/", "-")
 
 
 # Per-pack list-count envelope. The LLM prompt asks for
@@ -329,63 +372,38 @@ class AchievementContentJsonGenerator(BaseGenerator):
             mod_id = "Custom.Achievements"
 
         defn = prior.get("achievement_definition_generator", GeneratorOutput())
-        reward = prior.get("achievement_reward_generator", GeneratorOutput())
 
         changes: list[dict] = []
 
-        # 1. Data/Achievements — one entry per achievement with Name, Description,
-        #    Icon, and (if a reward exists) Rewards. Vanilla SDV looks up
-        #    achievements by numeric string id under this asset.
+        # 1. Data/Achievements — one entry per achievement. SDV 1.6's
+        #    Data/Achievements is a Dictionary<int, string>; each value
+        #    is a caret-delimited string:
+        #    Name^Description^showOnCollectionsPage^prerequisite^hatIndex.
+        #    (The pre-1.6 per-entry Name/Description/Icon object shape is
+        #    gone — the icon is replaced by the granted hat index.)
         ach_file = "assets/achievements/achievements.json"
         ach_data = defn.files.get(ach_file, {})
         if isinstance(ach_data, dict) and isinstance(ach_data.get("achievements"), list):
-            ach_entries: dict[str, dict] = {}
+            ach_entries: dict[str, str] = {}
             for a in ach_data["achievements"]:
                 if not isinstance(a, dict):
                     continue
                 aid = _sanitize_achievement_id(a.get("AchievementID"))
                 if not aid:
                     continue
-                ach_entries[aid] = {
-                    "Name": a.get("Name", "Custom Achievement"),
-                    "Description": a.get("Description", ""),
-                    "Icon": _normalize_icon_hint(a.get("IconHint")),
-                }
+                name = _sanitize_achievement_pipe(a.get("Name", "Custom Achievement"))
+                description = _sanitize_achievement_pipe(a.get("Description", ""))
+                hat_index = _ICON_HINT_HAT_INDEX.get(
+                    _normalize_icon_hint(a.get("IconHint")), 0
+                )
+                ach_entries[aid] = (
+                    f"{name}^{description}^true^-1^{hat_index}"
+                )
             if ach_entries:
                 changes.append({
                     "Action": "EditData",
                     "Target": "Data/Achievements",
                     "Entries": ach_entries,
-                })
-
-        # 2. Merge rewards into the same Data/Achievements table under the
-        #    per-achievement "Rewards" field. Content Patcher handles
-        #    additive Fields on the same Target.
-        reward_file = "assets/achievements/rewards.json"
-        reward_data = reward.files.get(reward_file, {})
-        if isinstance(reward_data, dict) and isinstance(reward_data.get("rewards"), list):
-            reward_entries: dict[str, dict] = {}
-            for r in reward_data["rewards"]:
-                if not isinstance(r, dict):
-                    continue
-                aid = _sanitize_achievement_id(r.get("AchievementID"))
-                if not aid:
-                    continue
-                reward_entries[aid] = {
-                    "Money": max(0, int(r.get("Gold", 0))),
-                    "Items": [i for i in r.get("Items", []) if isinstance(i, dict)],
-                    "FriendshipPoints": max(0, int(r.get("FriendshipPoints", 0))),
-                }
-                # Only include a target NPC when one is set
-                target = r.get("FriendshipTarget", "")
-                if isinstance(target, str) and target.strip():
-                    reward_entries[aid]["FriendshipTarget"] = target.strip()
-            if reward_entries:
-                changes.append({
-                    "Action": "EditData",
-                    "Target": "Data/Achievements",
-                    "Entries": reward_entries,
-                    "Fields": "Rewards",
                 })
 
         # 3. Friendly Strings/UI registration so the achievement popup reads
@@ -394,7 +412,7 @@ class AchievementContentJsonGenerator(BaseGenerator):
         if changes:
             changes.append({
                 "Action": "EditData",
-                "Target": "Data/Strings/UI",
+                "Target": "Strings/UI",
                 "Entries": {
                     f"Achievement_{mod_id}": "New Achievement unlocked!",
                 },
@@ -420,4 +438,30 @@ class AchievementContentJsonGenerator(BaseGenerator):
             return errors
         if "Changes" not in content:
             errors.append("achievement_content_json_generator: Changes key missing")
+            return errors
+        # SDV 1.6's Data/Achievements is a Dictionary<int, string>: every
+        # EditData entry value must be a caret-delimited string with the
+        # canonical 5 fields (Name^Description^display^prereq^hat).
+        for change in content["Changes"]:
+            if not isinstance(change, dict):
+                continue
+            if change.get("Target") != "Data/Achievements":
+                continue
+            entries = change.get("Entries")
+            if not isinstance(entries, dict):
+                continue
+            for key, value in entries.items():
+                if not isinstance(value, str):
+                    errors.append(
+                        "achievement_content_json_generator: "
+                        f"Data/Achievements Entries[{key}] not a string"
+                    )
+                    continue
+                field_count = value.count("^") + 1
+                if field_count != 5:
+                    errors.append(
+                        "achievement_content_json_generator: "
+                        f"Data/Achievements Entries[{key}] must have 5 "
+                        f"caret-delimited fields, got {field_count}"
+                    )
         return errors

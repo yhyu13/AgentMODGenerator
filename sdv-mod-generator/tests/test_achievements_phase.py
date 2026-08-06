@@ -152,7 +152,7 @@ class TestAchievementContentJsonGeneratorDeterministic:
             ),
         }
 
-    def test_emits_content_json_with_3_change_blocks(self) -> None:
+    def test_emits_content_json_with_2_change_blocks(self) -> None:
         gen = AchievementContentJsonGenerator()
         prior = self._build_prior_outputs()
         inp: GeneratorInput = {
@@ -171,13 +171,29 @@ class TestAchievementContentJsonGeneratorDeterministic:
         assert isinstance(content, dict)
         assert "Changes" in content
         assert isinstance(content["Changes"], list)
-        # 2 EditData blocks for Data/Achievements (definitions + rewards
-        # additive Fields) + 1 EditData block for the Strings/UI
-        # registration = 3 changes total.
-        assert len(content["Changes"]) == 3, (
-            f"Expected 3 changes (Data/Achievements defs + Data/Achievements "
-            f"rewards + Data/Strings/UI), got {len(content['Changes'])}"
+        # 1 EditData block for Data/Achievements (definitions) + 1
+        # EditData block for the Strings/UI registration = 2 changes
+        # total. (SDV 1.6's Data/Achievements is a Dictionary<int,
+        # string> with no reward fields, so the legacy rewards block
+        # is dropped.)
+        assert len(content["Changes"]) == 2, (
+            f"Expected 2 changes (Data/Achievements defs + Strings/UI), "
+            f"got {len(content['Changes'])}"
         )
+        # Every Data/Achievements entry is a caret-delimited string.
+        ach_change = next(
+            c for c in content["Changes"]
+            if c.get("Target") == "Data/Achievements"
+        )
+        for value in ach_change["Entries"].values():
+            assert isinstance(value, str), (
+                f"Data/Achievements entries must be strings, got "
+                f"{type(value).__name__}"
+            )
+            assert value.count("^") == 4, (
+                f"Data/Achievements entry must have 5 caret-delimited "
+                f"fields, got {value!r}"
+            )
         # Verify the mod_id propagated from manifest.
         assert out.metadata.get("mod_id") == "testachievementsmod", (
             f"AchievementContentJsonGenerator should lowercase the "
