@@ -14,6 +14,24 @@ from generators.core import GeneratorOutput
 from generators.packs.stardew_valley.features.shop_channel import ContentJsonGenerator
 from quality.gate_t1 import run_t1
 
+VALID_CP_WHEN_TOKENS = frozenset({
+    "Day", "DayEvent", "DayOfWeek", "DaysPlayed", "Season", "Year", "Weather",
+    "HasActiveQuest", "HasCaughtFish", "HasCookingRecipe", "HasCraftingRecipe",
+    "HasConversationTopic", "HasFlag", "HasProfession", "HasReadLetter",
+    "HasSeenEvent", "HasVisitedLocation", "DailyLuck", "HasDialogueAnswer",
+    "HasWalletItem", "IsMainPlayer", "IsOutdoors", "LocationContext",
+    "LocationName", "LocationOwnerId", "LocationUniqueName", "PlayerGender",
+    "PlayerName", "PreferredPet", "SkillLevel", "ChildNames", "ChildGenders",
+    "Hearts", "Relationship", "Roommate", "Spouse", "FarmCave",
+    "FarmhouseUpgrade", "FarmMapAsset", "FarmName", "FarmType",
+    "IsCommunityCenterComplete", "IsJojaMartComplete", "HavingChild",
+    "Pregnant", "Time", "Count", "Query", "Range", "Round", "Lowercase",
+    "Merge", "PathPart", "Random", "Render", "Uppercase", "FirstValidFile",
+    "HasMod", "HasFile", "HasValue", "I18n", "Language", "ModId",
+    "AbsoluteFilePath", "FormatAssetName", "InternalAssetKey", "FromFile",
+    "Target", "TargetWithoutPath", "TargetPathOnly",
+})
+
 
 def _run_content_generator(prior: dict | None = None) -> GeneratorOutput:
     inp = {
@@ -51,6 +69,38 @@ class TestShopChannelShape:
         out.add_file("content.json", [{"Action": "Load"}])
         errors = ContentJsonGenerator().validate_output(out)
         assert any("object root" in e for e in errors)
+
+    def test_all_when_tokens_are_valid_cp_tokens(self):
+        shop = GeneratorOutput()
+        shop.add_file(
+            "assets/data/shops.tsv",
+            "ItemType\tItemName\tItemName2\tPrice\tStock\nObject\tParsnip Seeds\t\t50\t10\n",
+        )
+        catalog = GeneratorOutput()
+        catalog.add_file("assets/data/catalog_preview.json", {
+            "shop_name": "TV Shopping Network",
+            "broadcast_day": "Saturday",
+            "items": [{"name": "Melon Seeds", "price": 250, "description": "Grows into a juicy melon."}],
+        })
+        mail = GeneratorOutput()
+        mail.add_file("mail/tv_shopping_broadcast.json", {"tv_shopping_broadcast": "Dear @"})
+        mail.add_file("mail/tv_shopping_delivery.json", {"tv_shopping_delivery": "Dear @"})
+        mail.metadata["mail_keys"] = ["tv_shopping_broadcast", "tv_shopping_delivery"]
+        mail.metadata["broadcast_key"] = "tv_shopping_broadcast"
+        mail.metadata["purchase_key"] = "tv_shopping_delivery"
+        prior = {
+            "shop_item_pool_generator": shop,
+            "catalog_preview_generator": catalog,
+            "mail_system_generator": mail,
+        }
+
+        out = _run_content_generator(prior)
+        content = out.files["content.json"]
+        when_actions = [a for a in content["Changes"] if a.get("When")]
+        assert len(when_actions) == 3, "expected tv_channels, Data/Shops, and catalog_preview When actions"
+        for action in when_actions:
+            for key in action["When"]:
+                assert key in VALID_CP_WHEN_TOKENS, f"invalid CP When token {key!r} in {action}"
 
 
 class TestT1ShapeEnforcement:

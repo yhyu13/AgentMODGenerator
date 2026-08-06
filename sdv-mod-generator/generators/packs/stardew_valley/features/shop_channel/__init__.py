@@ -637,7 +637,7 @@ class ContentJsonGenerator(BaseGenerator):
             "Action": "Load",
             "Target": f"mods/{mod_id}/tv_channels",
             "FromFile": "assets/data/tv_channels.json",
-            "When": {"DayOfMonth": 6},
+            "When": {"Day": 6},
         })
 
         tv_channel_entry = {
@@ -676,7 +676,7 @@ class ContentJsonGenerator(BaseGenerator):
                 "Action": "Load",
                 "Target": f"Data/Shops/{mod_id}",
                 "FromFile": "assets/data/shops.tsv",
-                "When": {"DayOfMonth": 6},
+                "When": {"Day": 6},
             })
 
         if catalog_data:
@@ -686,7 +686,7 @@ class ContentJsonGenerator(BaseGenerator):
                     "Action": "Load",
                     "Target": f"mods/{mod_id}/catalog_preview",
                     "FromFile": "assets/data/catalog_preview.json",
-                    "When": {"MailReceived": broadcast_key},
+                    "When": {"HasFlag": broadcast_key},
                 })
 
         if damage_data:
