@@ -12,6 +12,39 @@ from generators.packs.stardew_valley.features.event_mod import (
 from generators.core.base import GeneratorInput, GeneratorOutput
 
 
+def build_festival_input() -> GeneratorInput:
+    """Build a fully-populated festival prior-output input."""
+    schedule_out = GeneratorOutput()
+    schedule_out.add_file("assets/festivals/SpringFlower_schedule.json", {"name": "SpringFlower"})
+    schedule_out.metadata["festival_name"] = "SpringFlower"
+    schedule_out.metadata["season"] = "spring"
+    schedule_out.metadata["day"] = 13
+
+    shop_out = GeneratorOutput()
+    shop_out.add_file("assets/festivals/SpringFlower_shop.json", {"shop_name": "SpringFlower Shop"})
+
+    map_out = GeneratorOutput()
+    map_out.add_file("assets/festivals/SpringFlower_map.json", {"map_name": "Town"})
+
+    dialogue_out = GeneratorOutput()
+    dialogue_out.add_file("assets/festivals/SpringFlower_dialogue.json", {"festival_abigail": "Hi!"})
+
+    mail_out = GeneratorOutput()
+    mail_out.add_file("mail/springflower_announcement.json", {"springflower_announcement": "Come join us!"})
+    mail_out.metadata["mail_key"] = "springflower_announcement"
+
+    return GeneratorInput(
+        prompt="Create a spring flower festival",
+        prior_outputs={
+            "festival_schedule_generator": schedule_out,
+            "festival_shop_generator": shop_out,
+            "festival_map_generator": map_out,
+            "festival_dialogue_generator": dialogue_out,
+            "festival_mail_generator": mail_out,
+        },
+    )
+
+
 class TestFestivalScheduleGenerator:
     """Tests for FestivalScheduleGenerator."""
 
@@ -159,6 +192,20 @@ class TestFestivalContentJsonGenerator:
         assert isinstance(content, dict)
         assert "Changes" in content
         assert len(content["Changes"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_festival_data_patches_use_load(self):
+        gen = FestivalContentJsonGenerator()
+        out = await gen.generate(build_festival_input())
+        content = out.files["content.json"]
+        load_targets = []
+        for change in content["Changes"]:
+            if "FromFile" in change:
+                assert change["Action"] == "Load"
+                load_targets.append(change["Target"])
+            elif change["Action"] == "EditData":
+                assert "FromFile" not in change
+        assert len(load_targets) == 4
 
     def test_validate_output_detects_missing_content(self):
         gen = FestivalContentJsonGenerator()

@@ -33,6 +33,12 @@ class TestNPCScheduleGenerator:
         assert "name" in schedule
 
     @pytest.mark.asyncio
+    async def test_schedule_fallback_defaults_to_real_npc(self):
+        gen = NPCScheduleGenerator()
+        out = await gen.generate(make_input("create NPC schedule"))
+        assert out.metadata.get("npc_name") == "Linus"
+
+    @pytest.mark.asyncio
     async def test_validate_passes_with_schedule(self):
         gen = NPCScheduleGenerator()
         out = await gen.generate(make_input())
@@ -129,3 +135,57 @@ class TestNPCContentJsonGenerator:
         out = await gen.generate(make_input("npc mod", prior))
         errors = gen.validate_output(out)
         assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_schedule_dialogue_patches_use_load(self):
+        manifest_out = GeneratorOutput()
+        manifest_out.add_file("manifest.json", {"UniqueID": "TestNPCMod"})
+        schedule_out = GeneratorOutput()
+        schedule_out.add_file("assets/schedules/Linus.json", {"name": "Linus"})
+        schedule_out.metadata["npc_name"] = "Linus"
+        dialogue_out = GeneratorOutput()
+        dialogue_out.add_file("assets/dialogue/Linus.json", {"Mon": "Hi!"})
+        dialogue_out.metadata["npc_name"] = "Linus"
+        taste_out = GeneratorOutput()
+        taste_out.add_file("assets/gift_tastes/Linus.json", {"NPCName": "Linus"})
+        taste_out.metadata["npc_name"] = "Linus"
+
+        prior = {
+            "manifest_generator": manifest_out,
+            "npc_schedule_generator": schedule_out,
+            "npc_dialogue_generator": dialogue_out,
+            "npc_gift_taste_generator": taste_out,
+        }
+        gen = NPCContentJsonGenerator()
+        out = await gen.generate(make_input("full npc mod", prior))
+        content = out.files["content.json"]
+        schedule_targets = []
+        for change in content["Changes"]:
+            target = change.get("Target", "")
+            assert "UnknownNPC" not in target
+            if "FromFile" in change:
+                assert change["Action"] == "Load"
+                if target.startswith("Characters/Schedules/"):
+                    schedule_targets.append(target)
+        assert "Characters/Schedules/Linus" in schedule_targets
+
+    @pytest.mark.asyncio
+    async def test_content_json_defaults_to_real_npc_without_metadata(self):
+        manifest_out = GeneratorOutput()
+        manifest_out.add_file("manifest.json", {"UniqueID": "TestNPCMod"})
+        schedule_out = GeneratorOutput()
+        schedule_out.add_file("assets/schedules/Linus.json", {"name": "Linus"})
+        dialogue_out = GeneratorOutput()
+        dialogue_out.add_file("assets/dialogue/Linus.json", {"Mon": "Hi!"})
+
+        prior = {
+            "manifest_generator": manifest_out,
+            "npc_schedule_generator": schedule_out,
+            "npc_dialogue_generator": dialogue_out,
+        }
+        gen = NPCContentJsonGenerator()
+        out = await gen.generate(make_input("npc mod", prior))
+        content = out.files["content.json"]
+        targets = [c.get("Target", "") for c in content["Changes"]]
+        assert "Characters/Schedules/Linus" in targets
+        assert all("UnknownNPC" not in t for t in targets)

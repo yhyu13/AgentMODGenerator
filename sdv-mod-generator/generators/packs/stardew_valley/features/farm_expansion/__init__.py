@@ -343,14 +343,15 @@ class FarmExpansionContentJsonGenerator(BaseGenerator):
             if isinstance(map_data, dict) and isinstance(map_data.get("edits"), list):
                 for e in map_data["edits"]:
                     target_map = e.get("TargetMap", "Farm")
+                    x = e.get("X", 0)
+                    y = e.get("Y", 0)
                     changes.append({
                         "Action": "EditMap",
                         "Target": f"Maps/{target_map}",
                         "MapTiles": [
                             {
                                 "Layer": e.get("Layer", "Back"),
-                                "X": e.get("X", 0),
-                                "Y": e.get("Y", 0),
+                                "Position": f"{x} {y}",
                                 "TileIndex": e.get("TileIndex"),
                                 "TileSheet": e.get("TileSheet"),
                             }
