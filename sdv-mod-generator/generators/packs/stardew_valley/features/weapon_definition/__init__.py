@@ -193,6 +193,30 @@ _DEFAULT_MOD_ID: str = "custom.weapondefinition"
 _DEFAULT_TEXTURE_TEMPLATE: str = "Weapons/{weapon_token}"
 
 
+# SDV 1.6 ``Data/Weapons`` raw field layout. Content Patcher edits
+# ``Data/Weapons`` as a ``Dictionary<string, string>`` whose values
+# are pipe-delimited rows in the pre-1.6 15-field format (see CP's
+# ``Migration_2_0.ForWeapons``), then merges each row back into the
+# structured ``WeaponData`` model on load. Field order (index):
+# 0 Name, 1 Description, 2 MinDamage, 3 MaxDamage, 4 Knockback,
+# 5 Speed, 6 Precision, 7 Defense, 8 Type, 9 MineBaseLevel,
+# 10 MineMinLevel, 11 AreaOfEffect, 12 CritChance, 13 CritMultiplier,
+# 14 DisplayName.
+_WEAPON_RAW_FIELD_COUNT: int = 15
+
+
+# SDV 1.6 ``WeaponData.Type`` is an integer enum: 0 (stabbing sword),
+# 1 (dagger), 2 (club or hammer), 3 (slashing sword), 4 (slingshot).
+# Maps the per-pack ``Type`` string enum onto the numeric ids used by
+# the raw ``Data/Weapons`` rows.
+_WEAPON_TYPE_IDS: dict[str, int] = {
+    "Sword": 0,
+    "Dagger": 1,
+    "Club": 2,
+    "Slingshot": 4,
+}
+
+
 # ---------------------------------------------------------------------
 # Sanitizers
 # ---------------------------------------------------------------------
@@ -405,6 +429,29 @@ def _sanitize_count(raw: object) -> int:
     if value > _MAX_WEAPONS:
         return _MAX_WEAPONS
     return value
+
+
+def _sanitize_pipe_field(raw: str) -> str:
+    """Make a text field safe for inclusion in a pipe-delimited row.
+
+    The ``Data/Weapons`` raw row splits fields on ``/``, so any
+    ``/`` in a text value would shift every later field. Replace it
+    with ``-`` (kept out of the per-weapon display string shim since
+    that shim is resolved at runtime, not parsed).
+    """
+    return raw.replace("/", "-")
+
+
+def _localized_text_token(translation_key: str) -> str:
+    """Wrap a translation key in the game's ``[LocalizedText ...]`` token.
+
+    Vanilla weapon rows store their display name and description as
+    tokenizable strings like ``[LocalizedText Strings\\Weapons:X]``.
+    We mirror that with the per-weapon ``Strings/UI`` keys so the
+    game's ``TokenParser`` resolves the actual display text at
+    runtime (this also keeps the raw row free of ``/`` characters).
+    """
+    return f"[LocalizedText Strings\\UI:{translation_key}]"
 
 
 # ---------------------------------------------------------------------
@@ -898,8 +945,14 @@ class WeaponDefinitionContentJsonGenerator(BaseGenerator):
             weapons = _fallback_weapon_list()
 
         # Build per-weapon Data/Weapons rows and the
-        # per-weapon Strings/UI shim entries.
-        weapon_entries: dict[str, dict[str, object]] = {}
+        # per-weapon Strings/UI shim entries. The Data/Weapons
+        # entries are pipe-delimited strings in the pre-1.6
+        # 15-field format Content Patcher expects (see
+        # ``_WEAPON_RAW_FIELD_COUNT``); the display name and
+        # description are ``[LocalizedText ...]`` tokens resolved
+        # from the Strings/UI shim at runtime, matching vanilla
+        # weapon rows.
+        weapon_entries: dict[str, str] = {}
         strings_entries: dict[str, str] = {}
         for row in weapons:
             token = row.get("ItemId", "")
@@ -920,11 +973,6 @@ class WeaponDefinitionContentJsonGenerator(BaseGenerator):
                 )
             description = _sanitize_description(
                 row.get("Description", "")
-            )
-            texture = _sanitize_texture(
-                row.get("Texture", ""),
-                _DEFAULT_TEXTURE_TEMPLATE,
-                token,
             )
             min_damage = _sanitize_damage(row.get("MinDamage", 0))
             max_damage = _sanitize_damage(
@@ -958,18 +1006,25 @@ class WeaponDefinitionContentJsonGenerator(BaseGenerator):
                 item_id=token
             )
 
-            weapon_entries[token] = {
-                "Name": display_name,
-                "DisplayName": display_name,
-                "Description": description_key,
-                "MinDamage": min_damage,
-                "MaxDamage": max_damage,
-                "CritChance": crit_chance,
-                "CritMultiplier": crit_multiplier,
-                "Speed": speed,
-                "Type": weapon_type,
-                "Texture": texture,
-            }
+            weapon_entries[token] = "/".join(
+                [
+                    _sanitize_pipe_field(display),
+                    _localized_text_token(description_key),
+                    str(min_damage),
+                    str(max_damage),
+                    "1",
+                    str(speed),
+                    "0",
+                    "0",
+                    str(_WEAPON_TYPE_IDS.get(weapon_type, 0)),
+                    "-1",
+                    "-1",
+                    "0",
+                    str(crit_chance),
+                    str(crit_multiplier),
+                    _localized_text_token(display_name),
+                ]
+            )
             strings_entries[display_name] = display
             strings_entries[description_key] = description
 
@@ -1021,9 +1076,10 @@ class WeaponDefinitionContentJsonGenerator(BaseGenerator):
         content.json is a dict, has ``Format`` and
         ``Changes``, ``Changes[0]["Target"]`` is
         ``"Data/Weapons"``, every ``ItemId`` starts with
-        ``"custom_weapon_"``, every weapon row carries the
-        canonical ``Name`` / ``Texture`` / ``Type`` /
-        ``MinDamage`` / ``MaxDamage`` / ``Speed`` fields, and
+        ``"custom_weapon_"``, every ``Data/Weapons`` entry value
+        is a pipe-delimited string with the canonical
+        ``_WEAPON_RAW_FIELD_COUNT`` fields (so Content Patcher can
+        merge it into the structured ``WeaponData`` model), and
         the ``Strings/UI`` change is present.
         """
         errors: list[str] = []
@@ -1093,32 +1149,23 @@ class WeaponDefinitionContentJsonGenerator(BaseGenerator):
                 )
             else:
                 for key, row in entries.items():
-                    if not isinstance(row, dict):
+                    if not isinstance(row, str):
                         errors.append(
                             "weapon_definition_content_json_"
                             f"generator: Data/Weapons "
-                            f"Entries[{key}] not a dict"
+                            f"Entries[{key}] not a string"
                         )
                         continue
-                    for required in (
-                        "Name",
-                        "Texture",
-                        "Type",
-                        "MinDamage",
-                        "MaxDamage",
-                        "CritChance",
-                        "CritMultiplier",
-                        "Speed",
-                        "DisplayName",
-                        "Description",
-                    ):
-                        if required not in row:
-                            errors.append(
-                                "weapon_definition_content_json_"
-                                f"generator: Data/Weapons "
-                                f"Entries[{key}] missing "
-                                f"{required!r}"
-                            )
+                    field_count = row.count("/") + 1
+                    if field_count != _WEAPON_RAW_FIELD_COUNT:
+                        errors.append(
+                            "weapon_definition_content_json_"
+                            f"generator: Data/Weapons "
+                            f"Entries[{key}] must have "
+                            f"{_WEAPON_RAW_FIELD_COUNT} "
+                            f"pipe-delimited fields, got "
+                            f"{field_count}"
+                        )
                     if not key.startswith(
                         f"{_WEAPON_TOKEN_PREFIX}_"
                     ):
@@ -1184,6 +1231,8 @@ __all__ = [
     "_DEFAULT_WEAPON_TYPE",
     "_DEFAULT_MOD_ID",
     "_DEFAULT_TEXTURE_TEMPLATE",
+    "_WEAPON_RAW_FIELD_COUNT",
+    "_WEAPON_TYPE_IDS",
     "_NAME_KEY_TEMPLATE",
     "_DESCRIPTION_KEY_TEMPLATE",
     "_FORMAT_VERSION",
@@ -1197,6 +1246,8 @@ __all__ = [
     "_sanitize_description",
     "_sanitize_texture",
     "_sanitize_count",
+    "_sanitize_pipe_field",
+    "_localized_text_token",
     "_sanitize_weapon_row",
     "_fallback_weapon",
     "_fallback_weapon_list",

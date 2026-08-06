@@ -125,6 +125,22 @@ class TestCraftingContentJsonGenerator:
         assert len(content["Changes"]) >= 1
         assert content["Changes"][0]["Action"] == "EditData"
         assert content["Changes"][0]["Target"] == "Data/CraftingRecipes"
+        # SDV 1.6 stores recipe data as Dictionary<string, string>:
+        # the entry value must be a pipe-delimited string with the
+        # canonical crafting layout Ingredients/Field|Home/Outputs/
+        # bigCraftable/unlock.
+        entry = content["Changes"][0]["Entries"]["Test_Bench"]
+        assert isinstance(entry, str), (
+            f"Data/CraftingRecipes entry must be a str, got "
+            f"{type(entry).__name__}"
+        )
+        fields = entry.split("/")
+        assert len(fields) == 5
+        assert fields[0] == "Wood 10"
+        assert fields[1] in ("Field", "Home")
+        assert fields[2] == "Test_Bench"
+        assert fields[3] == "false"
+        assert fields[4] == "default"
 
     @pytest.mark.asyncio
     async def test_content_json_with_cooking(self):
@@ -153,6 +169,15 @@ class TestCraftingContentJsonGenerator:
         cooking_changes = [c for c in changes if c["Target"] == "Data/CookingRecipes"]
         assert len(cooking_changes) == 1
         assert "Test_Soup" in cooking_changes[0]["Entries"]
+        # Value is a pipe-delimited string with the canonical cooking
+        # layout Ingredients/unused/Outputs/unlock.
+        entry = cooking_changes[0]["Entries"]["Test_Soup"]
+        assert isinstance(entry, str)
+        fields = entry.split("/")
+        assert len(fields) == 4
+        assert fields[0] == "Tomato 2"
+        assert fields[2] == "Test_Soup"
+        assert fields[3] == "default"
 
     @pytest.mark.asyncio
     async def test_content_json_validate_passes(self):

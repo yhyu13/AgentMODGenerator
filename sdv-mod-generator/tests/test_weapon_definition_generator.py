@@ -67,9 +67,6 @@ from generators.packs.stardew_valley.features.weapon_definition import (
     _WEAPON_TYPES,
     _DEFAULT_WEAPON_TYPE,
     _DEFAULT_MOD_ID,
-    _DEFAULT_TEXTURE_TEMPLATE,
-    _NAME_KEY_TEMPLATE,
-    _DESCRIPTION_KEY_TEMPLATE,
     _FORMAT_VERSION,
     _sanitize_weapon_token,
     _sanitize_damage,
@@ -1178,27 +1175,13 @@ class TestWeaponDefinitionContentJsonValidateOutput:
                     "Action": "EditData",
                     "Target": "Data/Weapons",
                     "Entries": {
-                        "custom_weapon_test_blade": {
-                            "Name": (
-                                "Weapon.custom_weapon_test_blade"
-                                ".Name"
-                            ),
-                            "DisplayName": (
-                                "Weapon.custom_weapon_test_blade"
-                                ".Name"
-                            ),
-                            "Description": (
-                                "Weapon.custom_weapon_test_blade"
-                                ".Description"
-                            ),
-                            "MinDamage": 10,
-                            "MaxDamage": 20,
-                            "CritChance": 0.05,
-                            "CritMultiplier": 2.0,
-                            "Speed": 5,
-                            "Type": "Sword",
-                            "Texture": "Weapons/test_blade",
-                        },
+                        "custom_weapon_test_blade": (
+                            "Test Blade/[LocalizedText Strings\\UI:"
+                            "Weapon.custom_weapon_test_blade.Description]/"
+                            "10/20/1/5/0/0/0/-1/-1/0/0.05/2.0/"
+                            "[LocalizedText Strings\\UI:"
+                            "Weapon.custom_weapon_test_blade.Name]"
+                        ),
                     },
                 },
                 {
@@ -1308,23 +1291,27 @@ class TestWeaponDefinitionContentJsonValidateOutput:
             f"errors = {errors}"
         )
 
-    def test_per_row_missing_field_flagged(self) -> None:
+    def test_row_with_wrong_field_count_flagged(self) -> None:
         gen = WeaponDefinitionContentJsonGenerator()
         content = self._valid_content_json()
-        # Drop ``CritMultiplier`` from the only row.
+        # Drop the last field (DisplayName) so the row has only 14
+        # fields instead of the canonical 15 — validate_output must flag
+        # the malformed row.
         row = content["Changes"][0]["Entries"][
             "custom_weapon_test_blade"
         ]
-        assert isinstance(row, dict)
-        del row["CritMultiplier"]
+        assert isinstance(row, str)
+        content["Changes"][0]["Entries"][
+            "custom_weapon_test_blade"
+        ] = "/".join(row.split("/")[:14])
         out = GeneratorOutput()
         out.add_file("content.json", content)
         errors = gen.validate_output(out)
         assert any(
-            "CritMultiplier" in e for e in errors
+            "15 pipe-delimited fields" in e for e in errors
         ), (
-            f"per-row missing CritMultiplier must be flagged, got "
-            f"errors = {errors}"
+            f"14-field weapon row must be flagged, got errors = "
+            f"{errors}"
         )
 
     def test_row_key_missing_prefix_flagged(self) -> None:
@@ -1334,7 +1321,7 @@ class TestWeaponDefinitionContentJsonValidateOutput:
         old_entries = content["Changes"][0]["Entries"]
         assert isinstance(old_entries, dict)
         old_row = old_entries["custom_weapon_test_blade"]
-        assert isinstance(old_row, dict)
+        assert isinstance(old_row, str)
         new_entries: dict[str, object] = {"evil_blade": old_row}
         content["Changes"][0]["Entries"] = new_entries
         out = GeneratorOutput()
@@ -1522,11 +1509,13 @@ class TestWeaponDefinitionContentJsonSanitizers:
     """The v169 sanitizers must fire inside the ContentJsonGenerator's
     row-construction path.
 
-    Four scenarios per the v171 plan section 4e:
+    Scenarios per the v171 plan section 4e:
       - MaxDamage clamp (MinDamage > MaxDamage → MaxDamage := MinDamage)
       - Empty DisplayName default → falls back to the title-cased
         bare token (stripped of ``custom_weapon_``)
-      - Path-traversal texture clamp (e.g. ``../../../etc/passwd``)
+      - Every emitted row is a pipe-delimited string with the
+        canonical 15 SDV 1.6 ``Data/Weapons`` fields (and the
+        ``Type`` field is the integer enum id)
       - Row-key prefix: every emitted key starts with ``custom_weapon_``
     """
 
@@ -1552,16 +1541,18 @@ class TestWeaponDefinitionContentJsonSanitizers:
         row = content["Changes"][0]["Entries"][
             "custom_weapon_clamp_blade"
         ]
-        assert isinstance(row, dict)
-        assert row["MaxDamage"] >= row["MinDamage"], (
+        assert isinstance(row, str)
+        fields = row.split("/")
+        min_damage = int(fields[2])
+        max_damage = int(fields[3])
+        assert max_damage >= min_damage, (
             f"MaxDamage below MinDamage must be clamped to >= "
-            f"MinDamage; got MinDamage={row['MinDamage']} "
-            f"MaxDamage={row['MaxDamage']}"
+            f"MinDamage; got MinDamage={min_damage} "
+            f"MaxDamage={max_damage}"
         )
-        assert row["MaxDamage"] == 10, (
+        assert max_damage == 10, (
             f"specific clamp: MinDamage=10, MaxDamage=5 → "
-            f"emitted MaxDamage must equal 10, got "
-            f"{row['MaxDamage']}"
+            f"emitted MaxDamage must equal 10, got {max_damage}"
         )
 
     def test_empty_display_name_falls_back_to_title_cased_token(
@@ -1607,44 +1598,54 @@ class TestWeaponDefinitionContentJsonSanitizers:
             f"token 'Ghost Blade'; got Strings/UI values = {values}"
         )
 
-    def test_path_traversal_texture_clamps_to_default(self) -> None:
-        # _sanitize_texture path-traversal guard is exercised in the
-        # ContentJsonGenerator context (not just the DefinitionGenerator
-        # context). The Texture field is read via _sanitize_texture
-        # with the _DEFAULT_TEXTURE_TEMPLATE fallback.
-        malicious_texture = "../../../etc/passwd"
+    def test_rows_are_strings_with_canonical_field_count(self) -> None:
+        # SDV 1.6 Data/Weapons is Dictionary<string, string>: every
+        # emitted entry value must be a pipe-delimited string with
+        # exactly the 15 pre-1.6 fields Content Patcher's 2.0
+        # migration merges into WeaponData.
         weapons = [
             {
-                "ItemId": "custom_weapon_trav_blade",
-                "Name": "Trav Blade",
-                "Description": "A blade that tries to traverse.",
+                "ItemId": "custom_weapon_string_blade",
+                "Name": "String Blade",
+                "Description": "A blade that must serialize as a string.",
                 "MinDamage": 5,
                 "MaxDamage": 10,
                 "CritChance": _DEFAULT_CRIT_CHANCE,
                 "CritMultiplier": _DEFAULT_CRIT_MULTIPLIER,
                 "Speed": _DEFAULT_SPEED,
                 "Type": "Dagger",
-                "Texture": malicious_texture,
+                "Texture": "Weapons/string_blade",
                 "DisplayName": (
-                    "Weapon.custom_weapon_trav_blade.Name"
+                    "Weapon.custom_weapon_string_blade.Name"
                 ),
             },
         ]
         content = _build_content_json(weapons)
-        row = content["Changes"][0]["Entries"][
-            "custom_weapon_trav_blade"
-        ]
-        assert isinstance(row, dict)
-        # _sanitize_texture clamps path-traversal input to the
-        # _DEFAULT_TEXTURE_TEMPLATE.format(token=...) value.
-        expected_texture = _DEFAULT_TEXTURE_TEMPLATE.format(
-            weapon_token="custom_weapon_trav_blade"
+        weapons_change = next(
+            c
+            for c in content["Changes"]
+            if isinstance(c, dict)
+            and c.get("Target") == "Data/Weapons"
         )
-        assert row["Texture"] == expected_texture, (
-            f"path-traversal Texture must clamp to "
-            f"_DEFAULT_TEXTURE_TEMPLATE (={expected_texture!r}), "
-            f"got {row['Texture']!r}"
-        )
+        assert isinstance(weapons_change, dict)
+        entries = weapons_change.get("Entries", {})
+        assert isinstance(entries, dict)
+        for key, value in entries.items():
+            assert isinstance(value, str), (
+                f"Data/Weapons Entries[{key}] must be a str, got "
+                f"{type(value).__name__}"
+            )
+            fields = value.split("/")
+            assert len(fields) == 15, (
+                f"Data/Weapons Entries[{key}] must have 15 "
+                f"pipe-delimited fields, got {len(fields)}: {value!r}"
+            )
+            # field 0 is the internal name, field 8 the int Type id.
+            assert fields[0], f"field 0 (Name) must be non-empty: {value!r}"
+            assert int(fields[8]) in (0, 1, 2, 3, 4), (
+                f"field 8 (Type) must be an integer weapon id, got "
+                f"{fields[8]!r}"
+            )
 
     def test_every_row_key_starts_with_custom_weapon_prefix(self) -> None:
         # Round-trip emission of 3 weapons — every emitted Data/Weapons
