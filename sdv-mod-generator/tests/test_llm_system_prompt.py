@@ -11,9 +11,53 @@ the single source of truth for what the LLM sees. It must:
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
+
+
+class TestContentActionsKnowledge:
+    """The content_actions KB must contain only authoritative CP When
+    tokens, and the knowledge must actually reach the LLM via the system
+    prompt."""
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def test_when_fields_have_authoritative_tokens(self) -> None:
+        from generators.llm_utils import get_content_actions
+        when_fields = get_content_actions()["when_fields"]
+        for token in ("Day", "HasFlag", "HasReadLetter", "HasMod"):
+            assert token in when_fields, f"{token} must be a valid When token"
+        for token in ("DayOfMonth", "MailReceived"):
+            assert token not in when_fields, (
+                f"{token} is not a valid CP When token and must not be listed"
+            )
+
+    def test_prompt_embeds_content_actions_knowledge(self) -> None:
+        from generators.llm_utils import llm_system_prompt
+        prompt = llm_system_prompt()
+        assert "Content Patcher rules:" in prompt
+        assert "HasFlag" in prompt
+        assert "DayOfMonth" not in prompt
+
+    def test_content_actions_json_copies_identical(self) -> None:
+        kb_copy = (
+            Path(__file__).parent.parent
+            / "knowledge" / "data" / "content_actions.json"
+        )
+        pack_copy = (
+            Path(__file__).parent.parent
+            / "generators" / "packs" / "stardew_valley"
+            / "knowledge" / "content_actions.json"
+        )
+        assert kb_copy.exists() and pack_copy.exists()
+        assert self._sha256(kb_copy) == self._sha256(pack_copy), (
+            "The two content_actions.json copies must stay byte-identical"
+        )
+
 
 
 class TestSystemPromptStructure:

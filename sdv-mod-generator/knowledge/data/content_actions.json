@@ -4,7 +4,7 @@
       "description": "Load a JSON file as a content patch",
       "fields": {
         "Target": {"type": "string", "required": true, "example": "\"Data/Locations\""},
-        "Entries": {"type": "object", "required": true, "example": "{\"Farm\": {...}}"}
+        "FromFile": {"type": "string", "required": true, "example": "\"assets/rainy_day_forecast.json\""}
       }
     },
     "EditData": {
@@ -21,7 +21,15 @@
       "description": "Edit map properties and tiles",
       "fields": {
         "Target": {"type": "string", "required": true, "example": "\"Maps/Farm\""},
-        "MapTiles": {"type": "array", "required": false},
+        "MapTiles": {
+          "type": "array",
+          "required": false,
+          "items": {
+            "Position": {"type": "object", "required": true, "example": "{\"X\": 15, \"Y\": 12}"},
+            "Layer": {"type": "string", "required": true, "example": "\"Buildings\""},
+            "SetProperties": {"type": "object", "required": false}
+          }
+        },
         "MapProperties": {"type": "object", "required": false},
         "AddWarps": {"type": "array", "required": false},
         "RemoveWarps": {"type": "array", "required": false}
@@ -93,11 +101,23 @@
     "LogicalOperators": ["AND", "OR", "NOR"]
   },
   "when_fields": [
-    "Season", "Year", "Day", "DayOfMonth", "Weather", "Time",
-    "Money", "PlayerGender", "HasFlag", "HasItem", "HasMoney",
-    "Relationship", "ConversationTopic", "Location", "HasSeenEvent",
-    "MailReceived", "Mailbox", "Stats", "SkillLevel", "Quest"
+    "Day", "DayEvent", "DayOfWeek", "DaysPlayed", "Season", "Year",
+    "Weather", "HasActiveQuest", "HasCaughtFish", "HasCookingRecipe",
+    "HasCraftingRecipe", "HasConversationTopic", "HasFlag", "HasProfession",
+    "HasReadLetter", "HasSeenEvent", "HasVisitedLocation", "DailyLuck",
+    "HasDialogueAnswer", "HasWalletItem", "IsMainPlayer", "IsOutdoors",
+    "LocationContext", "LocationName", "LocationOwnerId", "LocationUniqueName",
+    "PlayerGender", "PlayerName", "PreferredPet", "SkillLevel", "ChildNames",
+    "ChildGenders", "Hearts", "Relationship", "Roommate", "Spouse",
+    "FarmCave", "FarmhouseUpgrade", "FarmMapAsset", "FarmName", "FarmType",
+    "IsCommunityCenterComplete", "IsJojaMartComplete", "HavingChild",
+    "Pregnant", "Time", "Count", "Query", "Range", "Round", "Lowercase",
+    "Merge", "PathPart", "Random", "Render", "Uppercase", "FirstValidFile",
+    "HasMod", "HasFile", "HasValue", "I18n", "Language", "ModId",
+    "AbsoluteFilePath", "FormatAssetName", "InternalAssetKey", "FromFile",
+    "Target", "TargetWithoutPath", "TargetPathOnly"
   ],
+  "when_fields_note": "Tokens may also be prefixed with a mod ID (e.g. `Esca.EMP/...`, `<ModID>/...`) or use the path form `<ModID>/<Path>`.",
   "patch_modes": [
     "Replace", "Overlay", "Add"
   ],

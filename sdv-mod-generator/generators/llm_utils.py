@@ -58,6 +58,38 @@ def get_content_actions() -> dict[str, Any]:
     return _content_actions
 
 
+def _content_actions_section() -> str:
+    """Build a compact 'Content Patcher rules' section from the KB."""
+    actions = get_content_actions()
+    lines: list[str] = ["Content Patcher rules:"]
+    when_fields = actions.get("when_fields") or []
+    if when_fields:
+        lines.append(
+            "Valid When condition tokens: "
+            + ", ".join(when_fields)
+            + ". "
+            + (actions.get("when_fields_note") or "")
+        )
+    action_rules: list[str] = []
+    for action_name, spec in (actions.get("actions") or {}).items():
+        fields = spec.get("fields") or {}
+        required: list[str] = []
+        for field_name, field_spec in fields.items():
+            if field_spec.get("required"):
+                required.append(field_name)
+            items = field_spec.get("items")
+            if isinstance(items, dict):
+                for sub_name, sub_spec in items.items():
+                    if sub_spec.get("required"):
+                        required.append(f"{field_name}.{sub_name}")
+        if required:
+            action_rules.append(f"{action_name}: requires " + ", ".join(required))
+    if action_rules:
+        lines.append("Action field requirements:")
+        lines.extend(f"- {rule}" for rule in action_rules)
+    return "\n".join(lines)
+
+
 def _get_cached_client() -> Any:
     global _client
     if _client is None:
@@ -235,4 +267,4 @@ def llm_system_prompt() -> str:
         "explanation. All paths use forward slashes (/) not backslashes. Prices are\n"
         "in gold (g)."
     )
-    return base + standards + trailer
+    return base + standards + "\n\n" + _content_actions_section() + trailer
