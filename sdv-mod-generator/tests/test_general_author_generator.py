@@ -99,3 +99,28 @@ class TestValidateOutput:
         out.add_file("manifest.json", {"Format": "1.29.0"})
         errors = GeneralAuthorGenerator().validate_output(out)
         assert any("content.json missing" in e for e in errors)
+
+
+class TestEmbeddedDataSchemas:
+    def test_schema_section_embeds_verified_assets(self) -> None:
+        from generators.packs.stardew_valley.features.general_author import (
+            _data_schemas_section,
+        )
+
+        section = _data_schemas_section()
+        # The verified shapes that the real-game gate caught as LLM mistakes
+        # must be present so the model stops guessing them from memory.
+        assert "Data/Achievements" in section
+        assert "Data/Objects" in section
+        assert "Data/Locations" in section
+        assert "Integer" in section or "integer" in section  # Fields-index rule
+        assert "2.0.0" in section  # Format rule
+
+    def test_schema_section_renders_into_system_prompt(self) -> None:
+        from generators.packs.stardew_valley.features.general_author import (
+            _general_author_system_prompt,
+        )
+
+        prompt = _general_author_system_prompt()
+        assert "Data/Achievements" in prompt
+        assert "VERIFIED" in prompt

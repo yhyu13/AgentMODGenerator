@@ -19,7 +19,9 @@ Deterministic behavior:
 """
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -30,6 +32,8 @@ from generators.core.manifest import build_manifest_dict, slugify_unique_id
 from generators.llm_utils import generate_structured, llm_system_prompt
 
 logger = structlog.get_logger(__name__)
+
+_KB_DIR = Path(__file__).parent.parent.parent / "knowledge"
 
 
 class GeneralAuthorChange(BaseModel):
@@ -59,6 +63,35 @@ class GeneralAuthorOutput(BaseModel):
     content: GeneralAuthorContent
 
 
+def _data_schemas_section() -> str:
+    """Render the verified SDV 1.6 data-schema reference into prompt text.
+
+    Loads ``knowledge/data_schemas.json`` (shapes proven loadable in the
+    real game) so the general author emits records the game's parser
+    actually accepts instead of guessing pipe/object formats from memory.
+    """
+    path = _KB_DIR / "data_schemas.json"
+    try:
+        schemas = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("general_author.data_schemas_missing", error=str(exc))
+        return "[data_schemas.json unavailable]"
+    lines: list[str] = [schemas.get("title", "SDV 1.6 data schemas"), "Rules:"]
+    lines.extend(f"- {rule}" for rule in schemas.get("rules", []))
+    for asset, spec in (schemas.get("assets") or {}).items():
+        value = spec.get("value", "")
+        lines.append(f"- {asset}: {value}")
+        if spec.get("format"):
+            lines.append(f"    format: {spec['format']}")
+        if spec.get("fields"):
+            lines.append("    fields: " + ", ".join(spec["fields"]))
+        if spec.get("example"):
+            lines.append(f"    example: {spec['example']}")
+        if spec.get("note"):
+            lines.append(f"    note: {spec['note']}")
+    return "\n".join(lines)
+
+
 def _general_author_system_prompt() -> str:
     return (
         llm_system_prompt()
@@ -73,26 +106,9 @@ def _general_author_system_prompt() -> str:
         "game files. Keep the change set minimal, loadable, and internally "
         "consistent (e.g. a new Data/Fish entry needs its matching rows). "
         "Reuse existing object IDs where sensible.\n\n"
-        "SDV 1.6 DATA FORMAT RULES (these are enforced by the real game — "
-        "violating them fails the SMAPI load gate):\n"
-        "- Typed Data/ assets such as Data/Objects, Data/Locations, "
-        "Data/Characters expect JSON OBJECT entry values matching the C# "
-        "property names (e.g. an ObjectData object: {\"Name\", "
-        "\"DisplayName\", \"Description\", \"Type\", \"Category\", \"Price\", "
-        "\"Texture\", \"SpriteIndex\", \"Edibility\", \"ContextTags\"}). Do "
-        "NOT emit pipe-delimited strings for these — the game can't convert "
-        "them.\n"
-        "- Data/Fish accepts a pipe-delimited entry string.\n"
-        "- AVOID editing Data/Locations unless you know its full LocationData "
-        "object shape; a malformed record breaks the whole asset. Prefer "
-        "leaving it untouched.\n"
-        "- EditData 'Fields' keys must be INTEGER pipe indices (e.g. \"0\", "
-        "\"1\"). NEVER use a field NAME (like \"Fish\" or \"Name\") as a "
-        "Fields key — the game rejects it.\n"
-        "- NPC dialogue lives in Characters/Dialogue/<NpcName> (NOT under a "
-        "Data/ prefix). Schedules are Characters/schedules/<NpcName>.\n"
-        "- content.json 'Format' must be '2.0.0' or newer (never the legacy "
-        "1.x format version)."
+        "The data schemas below are VERIFIED against the real game — follow "
+        "them exactly (string vs object value, field order, delimiters):\n"
+        + _data_schemas_section()
     )
 
 
