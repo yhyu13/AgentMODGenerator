@@ -12,6 +12,11 @@ HARD_FAIL_PATTERNS = (
     "error loading mod",
     "can't apply data patch",
     "mod failed to load",
+    # Content Patcher reports a broken content.json (e.g. a CP 2.x EditMap
+    # MapTiles entry whose ``Position`` is a string instead of an object)
+    # as "Error preloading content pack '<name>'." — a hard failure the
+    # older patterns above don't match.
+    "error preloading content pack",
 )
 
 #: Markers that turn a Content Patcher "Ignored ..." skip into a failure.

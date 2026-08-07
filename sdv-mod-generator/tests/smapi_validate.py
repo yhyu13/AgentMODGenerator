@@ -237,9 +237,18 @@ def _validate_actions(actions: list, errors: list[str], known_when_keys: frozens
             map_tiles = action.get("MapTiles")
             if isinstance(map_tiles, list):
                 for j, tile in enumerate(map_tiles):
-                    if isinstance(tile, dict) and not tile.get("Position"):
+                    if not isinstance(tile, dict):
+                        continue
+                    pos = tile.get("Position")
+                    if not pos:
                         errors.append(
                             f"content.json: action[{i}] 'EditMap' MapTiles[{j}] missing 'Position'"
+                        )
+                    elif not isinstance(pos, dict) or "X" not in pos or "Y" not in pos:
+                        errors.append(
+                            f"content.json: action[{i}] 'EditMap' MapTiles[{j}] "
+                            "'Position' must be an object with 'X' and 'Y' "
+                            f"(got {pos!r})"
                         )
 
 

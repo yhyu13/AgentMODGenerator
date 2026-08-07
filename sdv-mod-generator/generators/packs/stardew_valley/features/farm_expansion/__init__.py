@@ -345,17 +345,18 @@ class FarmExpansionContentJsonGenerator(BaseGenerator):
                     target_map = e.get("TargetMap", "Farm")
                     x = e.get("X", 0)
                     y = e.get("Y", 0)
+                    tile: dict = {
+                        "Layer": e.get("Layer", "Back"),
+                        "Position": {"X": x, "Y": y},
+                    }
+                    if e.get("TileIndex") is not None:
+                        tile["SetIndex"] = str(e["TileIndex"])
+                    if e.get("TileSheet"):
+                        tile["SetTilesheet"] = e["TileSheet"]
                     changes.append({
                         "Action": "EditMap",
                         "Target": f"Maps/{target_map}",
-                        "MapTiles": [
-                            {
-                                "Layer": e.get("Layer", "Back"),
-                                "Position": f"{x} {y}",
-                                "TileIndex": e.get("TileIndex"),
-                                "TileSheet": e.get("TileSheet"),
-                            }
-                        ],
+                        "MapTiles": [tile],
                     })
 
         out.add_file("content.json", {

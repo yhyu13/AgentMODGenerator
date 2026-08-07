@@ -27,6 +27,8 @@
           "items": {
             "Position": {"type": "object", "required": true, "example": "{\"X\": 15, \"Y\": 12}"},
             "Layer": {"type": "string", "required": true, "example": "\"Buildings\""},
+            "SetTilesheet": {"type": "string", "required": false, "example": "\"spring_outdoorsTileSheet\""},
+            "SetIndex": {"type": "string", "required": false, "example": "\"0\""},
             "SetProperties": {"type": "object", "required": false}
           }
         },

@@ -234,9 +234,13 @@ class TestFarmExpansionContentJsonGenerator:
         assert len(editmap_changes) >= 1
         for change in editmap_changes:
             for tile in change["MapTiles"]:
-                assert tile["Position"].strip() != ""
-                assert "X" not in tile
-                assert "Y" not in tile
+                # CP 2.x requires Position as an object with X/Y (a string
+                # like "60 20" fails with "Error preloading content pack").
+                assert isinstance(tile["Position"], dict)
+                assert "X" in tile["Position"]
+                assert "Y" in tile["Position"]
+                assert tile.get("SetIndex") is not None
+                assert tile.get("SetTilesheet") is not None
 
     @pytest.mark.asyncio
     async def test_content_json_with_empty_prior(self):

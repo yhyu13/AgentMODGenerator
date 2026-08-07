@@ -237,8 +237,16 @@ def _validate_cp_change(change: dict, known_keys: frozenset[str]) -> list[str]:
         map_tiles = change.get("MapTiles")
         if isinstance(map_tiles, list):
             for j, tile in enumerate(map_tiles):
-                if isinstance(tile, dict) and not tile.get("Position"):
+                if not isinstance(tile, dict):
+                    continue
+                pos = tile.get("Position")
+                if not pos:
                     errors.append(f"EditMap MapTiles[{j}] missing 'Position'")
+                elif not isinstance(pos, dict) or "X" not in pos or "Y" not in pos:
+                    errors.append(
+                        f"EditMap MapTiles[{j}] 'Position' must be an object "
+                        f"with 'X' and 'Y' (got {pos!r})"
+                    )
 
     return errors
 

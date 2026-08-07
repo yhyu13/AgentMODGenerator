@@ -144,9 +144,15 @@ class TestValidateContentJsonCpSchema:
 
     def test_editmap_with_position_passes(self):
         errors = validate_content_json([
-            {"Action": "EditMap", "Target": "Maps/Farm", "MapTiles": [{"Position": "5 5", "Layer": "Back"}]},
+            {"Action": "EditMap", "Target": "Maps/Farm", "MapTiles": [{"Position": {"X": 5, "Y": 5}, "Layer": "Back"}]},
         ])
         assert errors == []
+
+    def test_editmap_string_position_rejected(self):
+        errors = validate_content_json([
+            {"Action": "EditMap", "Target": "Maps/Farm", "MapTiles": [{"Position": "5 5", "Layer": "Back"}]},
+        ])
+        assert any("'Position' must be an object with 'X' and 'Y'" in e for e in errors)
 
 
 class TestValidateZipContents:
