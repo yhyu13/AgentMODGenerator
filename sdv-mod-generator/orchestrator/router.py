@@ -113,8 +113,30 @@ _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
         "fishing rod": "tool_definition",
         "tool definition": "tool_definition",
         "custom tool": "tool_definition",
+        "schedule": "npc_schedule",
     },
 }
+
+#: Explicit festival/event-type words that pin a prompt to ``event_mod``
+#: even when a weather keyword is present. Without this guard the
+#: weather-priority override steals prompts like ``"a festival where it
+#: snows candy"`` into ``weather_event``.
+_EVENT_TYPE_KEYWORDS: tuple[str, ...] = (
+    "festival", "celebration", "fair", "parade", "carnival", "gathering",
+)
+
+#: Concepts with NO generator phase in this project. When a prompt falls
+#: through the phase scan and mentions one of these, it routes to the
+#: ``no_support`` sentinel phase so the pipeline fails with a clear
+#: "unsupported_request" error instead of silently producing an unrelated
+#: ``shop_channel`` mod (e.g. a quest/fish/monster request became a TV
+#: shopping channel).
+_UNSUPPORTED_KEYWORDS: tuple[str, ...] = (
+    "quest", "quests", "fish", "fishing", "monster", "monsters",
+    "machine", "machines", "skill", "skills", "marriage", "pet",
+    "crops", "crop growth", "crop speed", "grow faster", "animal",
+    "custom npc", "new npcs",
+)
 
 
 def detect_game(prompt: str) -> str:
@@ -144,6 +166,17 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
         tuple of (phase, RoutingHint with game included)
     """
     game_id = detect_game(prompt)
+    # Boundary guard: only route to a game that has a registered pack.
+    # The keyword tables include other games (minecraft/skyrim) whose
+    # keywords (e.g. ``forge``) can appear in Stardew prompts; routing to
+    # a game with no pack made the pipeline hard-fail with "Unknown game".
+    try:
+        from generators.core import get_game_pack
+        if get_game_pack(game_id) is None:
+            logger.warning("router.unknown_game_fallback", game=game_id)
+            game_id = "stardew_valley"
+    except ImportError:
+        pass
     prompt_lower = prompt.lower()
 
     phase_map = _PHASE_BY_KEYWORD.get(game_id, {})
@@ -169,7 +202,7 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
     # via the main loop above.
     if matched_phase == "event_mod" and any(
         k in prompt_lower for k in ("rain", "storm", "snow", "wind", "weather", "buff")
-    ):
+    ) and not any(k in prompt_lower for k in _EVENT_TYPE_KEYWORDS):
         matched_phase = "weather_event"
         # ``matched_keyword`` stays as the longest original match
         # (the ``"event"`` literal) so the v27 confidence / diagnose
@@ -181,8 +214,15 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
 
     is_fallback = matched_phase is None
     if is_fallback:
-        matched_phase = phase_map.get("shop", "shop_channel")
-        matched_keyword = ""
+        unsupported_kw = next(
+            (kw for kw in _UNSUPPORTED_KEYWORDS if kw in prompt_lower), None
+        )
+        if unsupported_kw:
+            matched_phase = "no_support"
+            matched_keyword = unsupported_kw
+        else:
+            matched_phase = phase_map.get("shop", "shop_channel")
+            matched_keyword = ""
 
     # v27 Blue: confidence heuristic based on matched keyword length.
     # The longest real keyword in the maps is ~16 chars ("seasonal
@@ -204,6 +244,8 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
         if pack is None:
             logger.warning("router.pack_not_found", game=game_id, phase=matched_phase)
             matched_generators = _default_generators_for_phase(matched_phase)
+        elif matched_phase == "no_support":
+            matched_generators = []
         elif matched_phase not in pack.list_phases():
             logger.warning("router.phase_not_in_pack", game=game_id, phase=matched_phase)
             matched_generators = _default_generators_for_phase(matched_phase)
@@ -277,6 +319,8 @@ def _default_generators_for_phase(phase: str) -> list[str]:
     packs land (they each have a pack-registration dependency that
     the broader P3-P5 stack needs to provide).
     """
+    if phase == "no_support":
+        return []
     if phase == "texture":
         return ["texture_generator"]
     if phase == "npc_schedule":

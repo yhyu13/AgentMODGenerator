@@ -39,6 +39,21 @@ def node_route(state: PipelineState) -> PipelineState:
         state.phase = hint.get("phase", "shop_channel")
         state.generators = hint.get("generators", [])
         state.hint = hint
+        if state.phase == "no_support":
+            # Routed to the unsupported-request sentinel (e.g. a quest /
+            # fish / monster prompt): fail fast with a clear error instead
+            # of producing an unrelated mod. The conditional edge after
+            # this node stops the graph here.
+            state.status = "failed"
+            concept = hint.get("matched_keyword", "")
+            state.errors.append(
+                f"unsupported_request: '{concept}' is not covered by any generator phase"
+            )
+            emit_pipeline_log(
+                state.request_id, "error", "pipeline.unsupported_request",
+                concept=concept,
+            )
+            return state
         state.status = "routing"
         emit_pipeline_log(
             state.request_id,
@@ -290,7 +305,20 @@ def build_graph() -> StateGraph:
     builder.add_node("package", node_package)
 
     builder.set_entry_point("route")
-    builder.add_edge("route", "generate")
+
+    def route_should_continue(state: PipelineState) -> str:
+        # Stop the graph immediately after routing on an unsupported-request
+        # (or any routing) failure instead of running generate/t1 on an
+        # empty generator list and stacking "no outputs" errors.
+        if state.status == "failed":
+            return "end"
+        return "generate"
+
+    builder.add_conditional_edges(
+        "route",
+        route_should_continue,
+        {"end": END, "generate": "generate"},
+    )
     builder.add_edge("generate", "t1_gate")
 
     def t1_should_continue(state: PipelineState) -> str:
