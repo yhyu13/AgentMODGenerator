@@ -105,7 +105,7 @@ class TestNPCScheduleRouting:
         assert "npc_content_json_generator" in hint["generators"]
 
     def test_npc_schedule_execution_order(self):
-        phase, hint = route("new NPC for stardew valley")
+        phase, hint = route("npc schedule for stardew valley")
         order = hint["execution_order"]
         assert order.index("manifest_generator") < order.index("npc_schedule_generator")
         assert order.index("npc_schedule_generator") < order.index("npc_dialogue_generator")

@@ -92,7 +92,7 @@ class TestMatchedKeyword:
         self, mock_phase_map: dict[str, dict[str, str]]
     ) -> None:
         """A prompt with no keyword match falls back to
-        ``shop_channel``; the ``matched_keyword`` is the empty
+        ``general_author``; the ``matched_keyword`` is the empty
         string so the diagnose surface can render "default
         fallback" rather than the synthetic ``"shop"`` keyword."""
         _, hint = router.route("make me a thing")
@@ -145,12 +145,12 @@ class TestConfidence:
         self, mock_phase_map: dict[str, dict[str, str]]
     ) -> None:
         """A prompt that matches no keyword falls back to
-        ``shop_channel`` with confidence exactly 0.0 — not
+        ``general_author`` with confidence exactly 0.0 — not
         ``0.01``, not ``0.001``, the literal zero so the
         orchestrator can branch on ``confidence == 0.0`` as
         the unambiguous fallback signal."""
         phase, hint = router.route("make me a thing")
-        assert phase == "shop_channel"
+        assert phase == "general_author"
         assert hint["matched_keyword"] == ""
         assert hint["confidence"] == 0.0
 

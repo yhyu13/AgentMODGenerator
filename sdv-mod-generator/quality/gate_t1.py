@@ -383,4 +383,20 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
                 f"(got {type(content).__name__})"
             )
 
+    elif gen_name == "general_author_generator":
+        manifest = output.files.get("manifest.json")
+        if not isinstance(manifest, dict):
+            errors.append("general_author_generator: manifest.json missing or not an object")
+        content = output.files.get("content.json")
+        if not isinstance(content, dict):
+            errors.append("general_author_generator: content.json missing or not an object")
+        elif not isinstance(content.get("Changes"), list):
+            errors.append("general_author_generator: content.json object root missing 'Changes' array")
+        else:
+            for i, action in enumerate(content["Changes"]):
+                if not isinstance(action, dict):
+                    errors.append(f"general_author_generator: content.json Changes[{i}] is not an object")
+                elif "Action" not in action or "Target" not in action:
+                    errors.append(f"general_author_generator: content.json Changes[{i}] missing 'Action' or 'Target'")
+
     return errors

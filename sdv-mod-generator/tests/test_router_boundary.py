@@ -1,5 +1,5 @@
 """Router boundary tests: cross-game keyword collisions, weather-override
-greediness, and the unsupported-request sentinel.
+greediness, and the hybrid general-author routing.
 
 Pins the fixes surfaced by the generator ability-boundary probe:
 - ``forge`` (a minecraft keyword) used to hard-fail a Stardew prompt with
@@ -8,8 +8,9 @@ Pins the fixes surfaced by the generator ability-boundary probe:
   by the weather-priority override; explicit event-type words now pin it
   to ``event_mod``.
 - quest/fish/monster/machine/skill/crop prompts used to silently become
-  ``shop_channel`` mods; they now route to the ``no_support`` sentinel and
-  the pipeline fails with a clear ``unsupported_request`` error.
+  ``shop_channel`` mods; they now route to the ``general_author`` phase
+  (hybrid LLM author), and only explicitly-impossible demands (C# code
+  mods, custom frameworks) reach the ``no_support`` sentinel.
 """
 from __future__ import annotations
 
@@ -50,51 +51,85 @@ class TestWeatherOverrideNotGreedy:
         assert phase == "event_mod"
 
 
-class TestUnsupportedSentinel:
+class TestGeneralAuthorFallback:
+    """Novel concepts now route to the general LLM author instead of the
+    old silent shop_channel fallback (hybrid routing)."""
+
+    def _assert_general_author(self, prompt: str) -> None:
+        phase, hint = router.route(prompt)
+        assert phase == "general_author"
+        assert "general_author_generator" in hint["generators"]
+        assert hint["confidence"] == 0.0
+
+    def test_quest_routes_general_author(self) -> None:
+        self._assert_general_author(
+            "add a quest to find the ancient amulet deep in the mines"
+        )
+
+    def test_machine_routes_general_author(self) -> None:
+        self._assert_general_author("add a new machine that turns stone into gold")
+
+    def test_monster_routes_general_author(self) -> None:
+        self._assert_general_author("add a new stone golem monster to the mines")
+
+    def test_fish_routes_general_author(self) -> None:
+        self._assert_general_author("add a custom fish that can be caught in the mines")
+
+    def test_crop_growth_routes_general_author(self) -> None:
+        self._assert_general_author("make crops grow twice as fast during summer")
+
+    def test_skill_routes_general_author(self) -> None:
+        self._assert_general_author("add a fishing mastery skill to the game")
+
+    def test_vague_prompt_routes_general_author(self) -> None:
+        self._assert_general_author("make me a thing")
+
+    def test_new_npc_routes_general_author(self) -> None:
+        self._assert_general_author("add a new npc named Bob to the village")
+
+
+class TestNoSupportImpossible:
+    """Only explicitly-impossible demands (C# code mods, custom frameworks)
+    keep the no_support sentinel."""
+
     def _assert_no_support(self, prompt: str, expected_kw: str) -> None:
         phase, hint = router.route(prompt)
         assert phase == "no_support"
         assert hint["generators"] == []
         assert hint["matched_keyword"] == expected_kw
-        assert hint["confidence"] == 0.0
 
-    def test_quest_routes_no_support(self) -> None:
-        self._assert_no_support(
-            "add a quest to find the ancient amulet deep in the mines", "quest"
+    def test_c_sharp_mod_routes_no_support(self) -> None:
+        self._assert_no_support("a c# mod that adds a fishing minigame", "c#")
+
+    def test_code_mod_routes_no_support(self) -> None:
+        self._assert_no_support("make a code mod that changes combat", "code mod")
+
+    def test_dll_routes_no_support(self) -> None:
+        self._assert_no_support("add a .dll that gives a new UI", ".dll")
+
+
+class TestNodeRouteGeneralAuthor:
+    def test_general_author_routes_normally(self) -> None:
+        state = PipelineState(
+            request_id="req_general",
+            user_id="test_user",
+            prompt="add a quest to find the ancient amulet",
         )
-
-    def test_machine_routes_no_support(self) -> None:
-        self._assert_no_support("add a new machine that turns stone into gold", "machine")
-
-    def test_monster_routes_no_support(self) -> None:
-        self._assert_no_support("add a new stone golem monster to the mines", "monster")
-
-    def test_fish_routes_no_support(self) -> None:
-        self._assert_no_support("add a custom fish that can be caught in the mines", "fish")
-
-    def test_crop_growth_routes_no_support(self) -> None:
-        self._assert_no_support("make crops grow twice as fast during summer", "crops")
-
-    def test_skill_routes_no_support(self) -> None:
-        self._assert_no_support("add a fishing mastery skill to the game", "fish")
-
-    def test_default_fallback_still_shop_channel(self) -> None:
-        """Prompts with no unsupported keyword still default to shop_channel."""
-        phase, hint = router.route("make me a thing")
-        assert phase == "shop_channel"
-        assert hint["matched_keyword"] == ""
+        result = node_route(state)
+        assert result.status == "routing"
+        assert result.phase == "general_author"
+        assert result.generators == ["general_author_generator"]
 
 
-class TestNodeRouteUnsupported:
+class TestNodeRouteNoSupport:
     def test_no_support_fails_fast_with_clear_error(self) -> None:
         state = PipelineState(
             request_id="req_unsupported",
             user_id="test_user",
-            prompt="add a quest to find the ancient amulet",
+            prompt="a c# mod that adds a fishing minigame",
         )
         result = node_route(state)
         assert result.status == "failed"
         assert result.phase == "no_support"
         assert result.generators == []
         assert any("unsupported_request" in e for e in result.errors)
-        assert "quest" in " ".join(result.errors)

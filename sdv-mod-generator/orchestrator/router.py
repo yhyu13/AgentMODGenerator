@@ -77,8 +77,8 @@ _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
         "npc routine": "npc_schedule",
         "npc event": "event_mod",
         "npc dialogue": "npc_schedule",
-        "new npc": "npc_schedule",
         "daily schedule": "npc_schedule",
+        "schedule": "npc_schedule",
         "festival": "event_mod",
         "event": "event_mod",
         "celebration": "event_mod",
@@ -113,7 +113,6 @@ _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
         "fishing rod": "tool_definition",
         "tool definition": "tool_definition",
         "custom tool": "tool_definition",
-        "schedule": "npc_schedule",
     },
 }
 
@@ -131,11 +130,9 @@ _EVENT_TYPE_KEYWORDS: tuple[str, ...] = (
 #: "unsupported_request" error instead of silently producing an unrelated
 #: ``shop_channel`` mod (e.g. a quest/fish/monster request became a TV
 #: shopping channel).
-_UNSUPPORTED_KEYWORDS: tuple[str, ...] = (
-    "quest", "quests", "fish", "fishing", "monster", "monsters",
-    "machine", "machines", "skill", "skills", "marriage", "pet",
-    "crops", "crop growth", "crop speed", "grow faster", "animal",
-    "custom npc", "new npcs",
+_IMPOSSIBLE_KEYWORDS: tuple[str, ...] = (
+    "c#", "c sharp", "csharp", "code mod", ".dll", "dll mod",
+    "source code", "framework mod", "custom framework", "smapi code",
 )
 
 
@@ -214,14 +211,18 @@ def route(prompt: str) -> tuple[str, RoutingHint]:
 
     is_fallback = matched_phase is None
     if is_fallback:
-        unsupported_kw = next(
-            (kw for kw in _UNSUPPORTED_KEYWORDS if kw in prompt_lower), None
+        impossible_kw = next(
+            (kw for kw in _IMPOSSIBLE_KEYWORDS if kw in prompt_lower), None
         )
-        if unsupported_kw:
+        if impossible_kw:
             matched_phase = "no_support"
-            matched_keyword = unsupported_kw
+            matched_keyword = impossible_kw
         else:
-            matched_phase = phase_map.get("shop", "shop_channel")
+            # Hybrid routing: novel/unknown concepts go to the general
+            # LLM CP-author phase instead of silently falling back to
+            # shop_channel. Only explicitly-impossible demands (C# code
+            # mods, custom frameworks) keep the no_support sentinel.
+            matched_phase = "general_author"
             matched_keyword = ""
 
     # v27 Blue: confidence heuristic based on matched keyword length.
@@ -321,6 +322,8 @@ def _default_generators_for_phase(phase: str) -> list[str]:
     """
     if phase == "no_support":
         return []
+    if phase == "general_author":
+        return ["general_author_generator"]
     if phase == "texture":
         return ["texture_generator"]
     if phase == "npc_schedule":

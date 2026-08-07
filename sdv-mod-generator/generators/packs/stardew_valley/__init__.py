@@ -72,6 +72,9 @@ from generators.packs.stardew_valley.features.tool_definition import (
     ToolDefinitionDefinitionGenerator,
     ToolDefinitionContentJsonGenerator,
 )
+from generators.packs.stardew_valley.features.general_author import (
+    GeneralAuthorGenerator,
+)
 
 _PKGDIR = Path(__file__).parent
 _MANIFEST = GameManifest(
@@ -81,7 +84,7 @@ _MANIFEST = GameManifest(
     supported_phases=[
         "shop_channel", "texture", "npc_schedule", "event_mod",
         "custom_crafting", "farm_expansion", "weather_event", "achievements",
-        "weapon_definition", "tool_definition",
+        "weapon_definition", "tool_definition", "general_author",
     ],
     knowledge_dir=_PKGDIR / "knowledge",
 )
@@ -284,6 +287,12 @@ class StardewValleyPack(GamePack):
                     "tool_definition_definition_generator",
                     "tool_definition_content_json_generator",
                 ],
+            )
+        if phase == "general_author":
+            return PhaseGenerators(
+                phase=phase,
+                generators=[GeneralAuthorGenerator],
+                execution_order=["general_author_generator"],
             )
         raise ValueError(f"Unknown phase for stardew_valley: {phase}")
 
