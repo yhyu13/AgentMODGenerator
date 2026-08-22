@@ -1,0 +1,77 @@
+{
+  "Format": "2.0.0",
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/Objects",
+      "Entries": {
+        "ai_generator.luminous_carp": {
+          "Name": "Luminous Carp",
+          "DisplayName": "Luminous Carp",
+          "Description": "A rare carp that emits a soft, ethereal glow from deep beneath the mountain lake. Fishermen say it lights the water like a lantern.",
+          "Type": "Fish",
+          "Category": -4,
+          "Price": 420,
+          "Texture": "Maps/springobjects",
+          "SpriteIndex": 145,
+          "Edibility": 25,
+          "ContextTags": [
+            "fish_lake",
+            "fish_night_market"
+          ]
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Fish",
+      "Entries": {
+        "ai_generator.luminous_carp": "Luminous Carp/85/floater/2/8/1800 2600/spring summer fall winter/both/0/.55/0/0/0/false/168 .04 684 .03/false"
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Locations",
+      "Fields": {
+        "Mountain": {
+          "Fish": [
+            {
+              "Id": "ai_generator.luminous_carp_entry",
+              "FishId": "ai_generator.luminous_carp",
+              "Season": null,
+              "TimeOfDaySets": [
+                {
+                  "StartTime": 1800,
+                  "EndTime": 2600
+                }
+              ],
+              "Precedence": 0,
+              "CuriosityLureBehavior": "AddToChanceIfNotPresent",
+              "ApplyDailyLuck": true,
+              "Chance": 0.12
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Buffs",
+      "Entries": {
+        "ai_generator.luminous_carp_eaten": {
+          "Stat": "Luck",
+          "Value": 2,
+          "Duration": 600,
+          "WeatherCondition": null
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Characters/Dialogue/Willy",
+      "Entries": {
+        "ai_generator_luminous_carp_caught": "Ahh, a Luminous Carp! I've been fishin' these waters for years and only seen a handful of 'em. They only come up after dark, guided by that eerie glow of theirs. Fine catch, @!"
+      }
+    }
+  ]
+}

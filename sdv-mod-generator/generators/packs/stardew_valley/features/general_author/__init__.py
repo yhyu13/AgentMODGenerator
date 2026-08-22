@@ -43,6 +43,7 @@ class GeneralAuthorChange(BaseModel):
     Target: str
     Entries: dict[str, Any] | None = None
     Fields: dict[str, Any] | None = None
+    TargetField: list[str] | None = None
     FromFile: str | None = None
     When: dict[str, Any] | None = None
     Priority: str | None = None
@@ -100,12 +101,16 @@ def _general_author_system_prompt() -> str:
         "schedules, events, crafting, farm expansion, weather, achievements, "
         "weapons, tools). Design ANY valid Content Patcher 2.x change set that "
         "fulfills the request using the SDV 1.6 data vocabulary: EditData on "
-        "game Data/ assets (e.g. Data/Characters, Data/Fish, Data/Monsters, "
-        "Data/Machines, Data/Objects, Data/CraftingRecipes, Data/BuffData, "
+        "game Data/ assets (e.g. Data/Characters, Data/Fish, Data/Objects, "
+        "Data/BigCraftables, Data/Machines, Data/CraftingRecipes, Data/Buffs, "
         "Characters/Dialogue, Characters/schedules), or Load from existing "
-        "game files. Keep the change set minimal, loadable, and internally "
-        "consistent (e.g. a new Data/Fish entry needs its matching rows). "
-        "Reuse existing object IDs where sensible.\n\n"
+        "game files. A new machine needs BOTH Data/BigCraftables (unqualified "
+        "id) AND Data/Machines keyed (BC)<id>. To append a list (e.g. location "
+        "Fish spawns) use TargetField + Entries with ItemId — never Fields, "
+        "which replaces the whole list. Keep the change set minimal, loadable, "
+        "and internally consistent (e.g. a new Data/Fish entry needs its "
+        "matching Data/Objects row and a Data/Locations spawn). Reuse existing "
+        "object IDs where sensible. Do not invent assets the game does not ship.\n\n"
         "The data schemas below are VERIFIED against the real game — follow "
         "them exactly (string vs object value, field order, delimiters):\n"
         + _data_schemas_section()

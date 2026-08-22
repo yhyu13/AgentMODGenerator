@@ -1,0 +1,71 @@
+{
+  "Format": "2.0.0",
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/Objects",
+      "Entries": {
+        "thunder_caller": {
+          "Name": "Thunder Caller",
+          "DisplayName": "Thunder Caller",
+          "Description": "A weathered relic said to call lightning from the clouds. The metal still hums when thunder rolls.",
+          "Type": "Basic",
+          "Category": -20,
+          "Price": 800,
+          "Texture": "Maps/springobjects",
+          "SpriteIndex": 123,
+          "Edibility": -300
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/CraftingRecipes",
+      "Entries": {
+        "Thunder Caller": "335 3 767 5 382 2/Home/thunder_caller/false/default"
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Buffs",
+      "Entries": {
+        "thunderstruck": {
+          "DisplayName": "Thunderstruck",
+          "Description": "Lightning answers the relic's call, charging you with storm-born power.",
+          "IconTexture": "TileSheets/BuffsIcons",
+          "IconSpriteIndex": 3,
+          "Duration": 600000,
+          "Effects": {
+            "Attack": 2,
+            "Speed": 1
+          }
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/TriggerActions",
+      "Entries": {
+        "thunder_caller_storm": {
+          "Id": "thunder_caller_storm",
+          "Trigger": "DayStarted",
+          "Condition": "WEATHER Here Storm",
+          "Actions": [
+            "AddBuff thunderstruck"
+          ],
+          "MarkActionApplied": false
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Characters/Dialogue/Wizard",
+      "Entries": {
+        "Weather_Stormy": "The skies are restless, @. That thunder is no accident — something old is calling it down."
+      },
+      "When": {
+        "Weather": "stormy"
+      }
+    }
+  ]
+}

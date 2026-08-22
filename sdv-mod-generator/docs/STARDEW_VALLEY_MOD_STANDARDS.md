@@ -104,7 +104,7 @@ breaks if you need them. Don't use Markdown — SDV displays plain text.
 assets/data/weather_buffs.json   ← custom JSON file SDV doesn't read
 ```
 
-**CORRECT** (Content Patcher's `Data/Buffs` shape):
+**CORRECT** (SDV 1.6 `Data/Buffs` shape):
 ```json
 {
   "Action": "EditData",
@@ -113,26 +113,27 @@ assets/data/weather_buffs.json   ← custom JSON file SDV doesn't read
     "rainy_day_fishing": {
       "DisplayName": "Rainy Day Fishing",
       "Description": "+3 Fishing while it's raining.",
-      "BuffTexture": "TileSheets\\BuffsIcons",
-      "BuffSheetIndex": "1",
-      "Duration": 300,
+      "IconTexture": "TileSheets\\BuffsIcons",
+      "IconSpriteIndex": 1,
+      "Duration": 300000,
       "Effects": { "FishingLevel": 3 }
     }
   }
 }
 ```
 
-The buff ID is the key; the value is the buff config. BuffTexture is the icon
-sheet (vanilla: `TileSheets\BuffsIcons`); BuffSheetIndex is the icon slot
-(0-23). Duration is in seconds (300 = 5 minutes, 600 = 10 min, 1800 = 30 min).
-Effects are stat-name → integer boosts. The 7 vanilla buffable stats are:
-Farming, Fishing, Mining, Foraging, Luck, Energy, Health, Magnetism, Speed,
-Defense, Attack, Immunity. (Magnetism/Speed/Defense/Attack/Immunity are
-real but the cron typically only uses the 7 core stats.)
+The buff ID is the key. `IconTexture` is the icon sheet (vanilla:
+`TileSheets\BuffsIcons`); `IconSpriteIndex` is the icon slot (0-23).
+Duration is **milliseconds** (300000 = 5 minutes, 600000 = 10 min).
+Effects keys are skill/stat fields: `FarmingLevel`, `FishingLevel`,
+`MiningLevel`, `ForagingLevel`, `LuckLevel`, `CombatLevel`, `MaxStamina`,
+`Speed`, `Defense`, `Attack`, `Immunity`, `MagneticRadius`.
+A `Data/Buffs` entry does nothing by itself — apply it with
+`Data/TriggerActions` `AddBuff` (weather) or `Data/Objects` `Buffs` (food).
 
 **Do NOT** create custom `weather_buffs.json` files. SDV will not read them.
 
-### 2.3 NPC dialogue: use `Data/Characters/Dialogue/<NPC>` EditData, NOT custom JSON
+### 2.3 NPC dialogue: use `Characters/Dialogue/<NPC>` EditData, NOT custom JSON
 
 **WRONG** (what the cron currently does):
 ```
@@ -143,7 +144,7 @@ assets/data/weather_dialogue.json   ← SDV doesn't read this
 ```json
 {
   "Action": "EditData",
-  "Target": "Data/Characters/Dialogue/Abigail",
+  "Target": "Characters/Dialogue/Abigail",
   "Entries": {
     "Weather_Rainy": "The rain makes me want to stay inside and play video games. Want to join me, @?"
   },
@@ -163,29 +164,32 @@ NPC dialogue style guidelines: keep under 120 characters, use `@` for player
 name, stay in-character (Abigail is emo + gamer, Sebastian is introverted,
 Penny is nurturing, Willy is the friendly fisherman, etc.).
 
-### 2.4 Events: use `Data/WeatherEvents` for weather-triggered events
+### 2.4 Weather buffs: use `Data/TriggerActions` + `Data/Buffs`
 
-The weather_event phase already does this correctly:
+There is **no** `Data/WeatherEvents` asset in SDV 1.6. Apply a weather
+buff with `Data/TriggerActions` (`DayStarted` + `WEATHER` game-state query
++ `AddBuff`) and define the buff in `Data/Buffs`.
+
 ```json
 {
   "Action": "EditData",
-  "Target": "Data/WeatherEvents",
+  "Target": "Data/TriggerActions",
   "Entries": {
     "spring_rain_blessing": {
-      "WeatherCondition": "Rain",
-      "Season": "Spring",
-      "Description": "...",
-      "Effects": [{ "Stat": "Farming", "Value": 2, "Duration": 300 }]
+      "Id": "spring_rain_blessing",
+      "Trigger": "DayStarted",
+      "Condition": "WEATHER Here Rain, SEASON Spring",
+      "Actions": ["AddBuff rainy_day_farming"],
+      "MarkActionApplied": false
     }
   }
 }
 ```
 
-Note: `WeatherCondition` values in `Data/WeatherEvents` are **PascalCase**
-("Rain", "Storm", "Snow", "Wind", "Sun"), unlike the `Weather:` filter in
-`When:` blocks (which is **lowercase**: "rainy", "stormy", "snowy", "windy",
-"sunny"). This is a real SDV quirk; the LLM must use the right case for the
-right context.
+`WEATHER Here` values are **PascalCase** (`Rain`, `Storm`, `Snow`, `Wind`,
+`Sun`). The `When: { "Weather": ... }` filter is **lowercase** (`rainy`,
+`stormy`, `snowy`, `windy`, `sunny`). Set `MarkActionApplied` false so the
+buff can apply again the next matching day.
 
 ## 3. Manifest.json — what to include
 
@@ -262,14 +266,13 @@ The LLM must use these conventions consistently:
 |---------|-----------|---------|
 | `manifest.json` `UniqueID` | snake_case, dot-separated, lowercase | `ai_generator.rainy_weather_events` |
 | `manifest.json` `Name` | Title Case, 3-7 words | "Rainy Weather Events" |
-| Event IDs (`Data/WeatherEvents` keys) | snake_case | `spring_rain_blessing` |
+| Trigger IDs (`Data/TriggerActions` keys) | snake_case | `spring_rain_blessing` |
 | Buff IDs (`Data/Buffs` keys) | snake_case | `rainy_day_fishing` |
 | Dialogue keys | PascalCase, condition-first | `Weather_Rainy`, `Weather_Storm` |
 | Mail filenames | snake_case, `.txt` not `.json` | `rainy_day_forecast.txt` |
 | NPC names | Exact vanilla capitalization | `Abigail`, `Sebastian`, `Penny` |
-| Stats (in Buffs `Effects`) | TitleCase | `FishingLevel`, `FarmingLevel` |
-| Stats (in WeatherEvents `Effects`) | TitleCase | `Farming`, `Fishing`, `Mining` |
-| Weather values in `Data/WeatherEvents` | PascalCase | `Rain`, `Storm`, `Snow` |
+| Stats (in Buffs `Effects`) | TitleCase skill fields | `FishingLevel`, `FarmingLevel` |
+| Weather values in `WEATHER` GSQ | PascalCase | `Rain`, `Storm`, `Snow` |
 | Weather values in `When` blocks | lowercase | `rainy`, `stormy`, `snowy` |
 
 ## 6. The 12-mod anti-pattern list (rejections the T2 panel has issued)
@@ -279,7 +282,7 @@ Don't do these:
 1. **Missing manifest.json** — critical failure, mod won't load.
 2. **mail/*.json** — wrong format, should be `mail/*.txt` plain text.
 3. **Custom `weather_buffs.json` or `weather_dialogue.json`** — SDV doesn't
-   read these. Use `Data/Buffs` and `Data/Characters/Dialogue/<NPC>` EditData.
+   read these. Use `Data/Buffs` and `Characters/Dialogue/<NPC>` EditData.
 4. **Single-word names** like "Storm" or "Buff" — too generic.
 5. **Mechanical descriptions** like "+2 Farming for 300 seconds" — should be
    evocative ("The gentle rain nurtures your crops, granting bonus farming
@@ -306,8 +309,8 @@ When a generator LLM is producing content for any Stardew Valley mod:
 2. **Generate the structured content** (events, dialogue, buffs, mail) with
    the right naming conventions (table above).
 3. **Wrap each piece in EditData** targeting the right `Data/...` file
-   (Data/WeatherEvents, Data/Buffs, Data/Characters/Dialogue/<NPC>,
-   Data/mail). Do NOT use custom JSON files.
+    (Data/TriggerActions, Data/Buffs, Characters/Dialogue/<NPC>,
+    Data/mail). Do NOT use custom JSON files. Do NOT invent assets.
 4. **Assemble content.json** with all the EditData blocks. Include the
    `Format: "1.29.0"` field.
 5. **Mail files: plain text, .txt extension, mail ID as filename**. No JSON
@@ -361,47 +364,34 @@ high-scoring (T2 score 9/10) mod would look like:
   "Changes": [
     {
       "Action": "EditData",
-      "Target": "Data/WeatherEvents",
-      "Entries": {
-        "spring_rain_blessing": {
-          "WeatherCondition": "Rain", "Season": "Spring",
-          "Description": "The gentle spring rain nurtures your crops, granting bonus farming experience.",
-          "Effects": [{"Stat": "Farming", "Value": 2, "Duration": 300}]
-        },
-        "summer_fishing_opportunity": {
-          "WeatherCondition": "Rain", "Season": "Summer",
-          "Description": "Fish become more active during summer rain, making it an ideal time to fish.",
-          "Effects": [{"Stat": "Fishing", "Value": 3, "Duration": 300}]
-        },
-        "fall_forest_mushrooms": {
-          "WeatherCondition": "Rain", "Season": "Fall",
-          "Description": "Autumn rains bring out mushrooms in the forest, boosting foraging skills.",
-          "Effects": [{"Stat": "Foraging", "Value": 2, "Duration": 300}]
-        },
-        "winter_mine_clarity": {
-          "WeatherCondition": "Rain", "Season": "Winter",
-          "Description": "The quiet winter rain helps you focus better while mining underground.",
-          "Effects": [{"Stat": "Mining", "Value": 2, "Duration": 300}]
-        }
-      }
-    },
-    {
-      "Action": "EditData",
       "Target": "Data/Buffs",
       "Entries": {
         "rainy_day_farming": {
           "DisplayName": "Rainy Day Farming",
           "Description": "+2 Farming while it's raining.",
-          "BuffTexture": "TileSheets\\BuffsIcons",
-          "BuffSheetIndex": "0",
-          "Duration": 300,
+          "IconTexture": "TileSheets\\BuffsIcons",
+          "IconSpriteIndex": 0,
+          "Duration": 300000,
           "Effects": { "FarmingLevel": 2 }
         }
       }
     },
     {
       "Action": "EditData",
-      "Target": "Data/Characters/Dialogue/Abigail",
+      "Target": "Data/TriggerActions",
+      "Entries": {
+        "spring_rain_blessing": {
+          "Id": "spring_rain_blessing",
+          "Trigger": "DayStarted",
+          "Condition": "WEATHER Here Rain, SEASON Spring",
+          "Actions": ["AddBuff rainy_day_farming"],
+          "MarkActionApplied": false
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Characters/Dialogue/Abigail",
       "Entries": {
         "Weather_Rainy": "The rain makes me want to stay inside and play video games. Want to join me, @?"
       },
@@ -440,7 +430,7 @@ Before the LLM declares a mod "done", verify:
 - [ ] Event/buff/mail IDs are snake_case
 - [ ] Dialogue keys are `Weather_<Condition>` PascalCase
 - [ ] All buff values are 1-5
-- [ ] All buff durations are 120-3600 seconds
+- [ ] All buff durations are milliseconds (120000-3600000)
 - [ ] Mod description is specific (not "adds stuff")
 - [ ] Mod covers a reasonable variety (not just 1 weather/season if more
       would be natural)

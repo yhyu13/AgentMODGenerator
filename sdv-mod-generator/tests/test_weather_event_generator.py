@@ -185,16 +185,28 @@ class TestWeatherContentJsonGeneratorDeterministic:
             f"got files = {list(out.files.keys())}"
         )
         content = out.files["content.json"]
-        # 2 events + 2 dialogue lines + 1 buff + 1 mail = 6 changes.
-        # Wait — the dialogue test produced 2 entries but the test's
-        # prior has 2 dialogue lines. The events test has 2 events.
-        # So total = 2 + 2 + 1 + 1 = 6 changes.
+        # 2 events → buff + trigger each; 2 dialogue; 1 buff → buff +
+        # trigger; 1 mail. Total 2*2 + 2 + 1*2 + 1 = 9.
         assert isinstance(content, dict)
         assert "Changes" in content
         assert isinstance(content["Changes"], list)
-        assert len(content["Changes"]) == 6, (
-            f"Expected 6 changes (2 events + 2 dialogue + 1 buff + 1 mail), "
+        assert len(content["Changes"]) == 9, (
+            f"Expected 9 changes (2 events×2 + 2 dialogue + 1 buff×2 + 1 mail), "
             f"got {len(content['Changes'])}"
+        )
+        targets = [c.get("Target") for c in content["Changes"] if isinstance(c, dict)]
+        assert "Data/WeatherEvents" not in targets
+        assert "Data/TriggerActions" in targets
+        assert "Data/Buffs" in targets
+        assert any(
+            isinstance(c, dict)
+            and c.get("Target") == "Data/Buffs"
+            and "IconTexture" in next(iter((c.get("Entries") or {}).values()), {})
+            for c in content["Changes"]
+        )
+        assert any(
+            isinstance(c, dict) and str(c.get("Target", "")).startswith("Characters/Dialogue/")
+            for c in content["Changes"]
         )
         # Verify the mod_id propagated from manifest.
         assert out.metadata.get("mod_id") == "testweathermod", (

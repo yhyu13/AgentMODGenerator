@@ -1,0 +1,57 @@
+{
+  "Format": "2.0.0",
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/BigCraftables",
+      "Entries": {
+        "stone_smelter": {
+          "Name": "Stone Smelter",
+          "DisplayName": "Stone Smelter",
+          "Description": "A sturdy kiln that transmutes ordinary stone into gleaming gold ore.",
+          "Price": 250,
+          "Texture": "TileSheets/Craftables",
+          "SpriteIndex": 13,
+          "CanBePlacedOutdoors": true,
+          "CanBePlacedIndoors": true
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Machines",
+      "Entries": {
+        "(BC)stone_smelter": {
+          "OutputRules": [
+            {
+              "Id": "Default",
+              "Triggers": [
+                {
+                  "Id": "Input",
+                  "Trigger": "ItemPlacedInMachine",
+                  "RequiredItemId": "(O)390",
+                  "RequiredCount": 10
+                }
+              ],
+              "OutputItem": [
+                {
+                  "Id": "Out",
+                  "ItemId": "(O)384",
+                  "MinStack": 1
+                }
+              ],
+              "MinutesUntilReady": 60
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/CraftingRecipes",
+      "Entries": {
+        "Stone Smelter": "390 50 378 20/Home/stone_smelter/true/default"
+      }
+    }
+  ]
+}

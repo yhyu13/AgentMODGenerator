@@ -1,0 +1,40 @@
+{
+  "Format": "2.0.0",
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/Objects",
+      "Entries": {
+        "thunder_caller_relic": {
+          "Name": "Thunder Caller",
+          "DisplayName": "Thunder Caller",
+          "Description": "A shard of obsidian cracked by a lightning strike.",
+          "Type": "Quest",
+          "Category": -8,
+          "Price": 750,
+          "Texture": "Maps/springobjects",
+          "SpriteIndex": 126,
+          "Edibility": -300
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/CraftingRecipes",
+      "Entries": {
+        "Thunder_Caller": "Iron Bar 3 Bat Wing 5 Coal 2/Home/thunder_caller_relic/false/default"
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/WeatherEvents",
+      "Entries": {
+        "thunder_caller_storm_surge": {
+          "WeatherCondition": "Storm",
+          "Season": "Summer",
+          "Description": "A wielder of the Thunder Caller draws lightning down."
+        }
+      }
+    }
+  ]
+}

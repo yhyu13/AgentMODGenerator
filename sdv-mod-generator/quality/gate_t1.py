@@ -35,6 +35,7 @@ the project is expected to import; everything else is internal and
 may change without a deprecation cycle.
 """
 import json
+import re
 import structlog
 from dataclasses import dataclass, field
 
@@ -398,5 +399,117 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
                     errors.append(f"general_author_generator: content.json Changes[{i}] is not an object")
                 elif "Action" not in action or "Target" not in action:
                     errors.append(f"general_author_generator: content.json Changes[{i}] missing 'Action' or 'Target'")
+                else:
+                    errors.extend(
+                        f"general_author_generator: content.json Changes[{i}] {e}"
+                        for e in _validate_general_author_change(action)
+                    )
 
+    return errors
+
+
+#: Display-name tokens that showed up in the three on-disk LLM mods and
+#: are never valid recipe ingredient IDs. Unique string IDs (Moss,
+#: SeaJelly) and numeric / qualified IDs are allowed.
+_RECIPE_DISPLAY_NAME_INGREDIENTS: frozenset[str] = frozenset({
+    "Stone", "Wood", "Coal", "CopperOre", "Iron Bar", "Gold Ore",
+    "Bat Wing", "Copper Ore", "IronBar", "GoldOre", "BatWing",
+})
+_RECIPE_INGREDIENT_ID_RE = re.compile(
+    r"^\((?:O|BC|W|T|F|H|B|P|S)\)[A-Za-z0-9_.]+$|^-?\d+$|^[A-Za-z][A-Za-z0-9_]*$"
+)
+_FICTIONAL_ASSETS: frozenset[str] = frozenset({
+    "Data/WeatherEvents",
+    "Data/BuffData",
+})
+
+
+def _validate_general_author_change(change: dict) -> list[str]:
+    """Reject game-data shapes the three LLM schema mods actually emitted.
+
+    Scoped to ``general_author_generator``. The weather_event template
+    now emits Data/TriggerActions + Data/Buffs instead of the fictional
+    weather-event asset.
+    """
+    errors: list[str] = []
+    target = change.get("Target")
+    if not isinstance(target, str):
+        return errors
+    target_norm = target.replace("\\", "/")
+
+    if target_norm in _FICTIONAL_ASSETS:
+        errors.append(
+            f"fictional asset '{target_norm}' does not exist in SDV 1.6"
+        )
+
+    if target_norm == "Data/Machines":
+        target_field = change.get("TargetField")
+        entries = change.get("Entries")
+        if not isinstance(target_field, list) and isinstance(entries, dict):
+            for key in entries:
+                if not isinstance(key, str) or not key.startswith("(BC)"):
+                    errors.append(
+                        f"Data/Machines Entries key '{key}' must be a "
+                        f"qualified big-craftable id starting with (BC)"
+                    )
+
+    if target_norm == "Data/Locations":
+        fields = change.get("Fields")
+        if isinstance(fields, dict):
+            for loc_id, loc_fields in fields.items():
+                if isinstance(loc_fields, dict) and "Fish" in loc_fields:
+                    errors.append(
+                        f"Data/Locations Fields[{loc_id!r}] sets Fish — "
+                        f"that replaces the entire spawn list. Append with "
+                        f"TargetField ['{loc_id}', 'Fish'] + Entries + ItemId"
+                    )
+
+    if target_norm in ("Data/CraftingRecipes", "Data/CookingRecipes"):
+        entries = change.get("Entries")
+        if isinstance(entries, dict):
+            for recipe_id, value in entries.items():
+                if not isinstance(value, str):
+                    continue
+                errors.extend(
+                    _validate_recipe_ingredients(recipe_id, value)
+                )
+
+    return errors
+
+
+def _validate_recipe_ingredients(recipe_id: str, value: str) -> list[str]:
+    """First slash-field of a recipe must be ID pairs, not display names."""
+    errors: list[str] = []
+    ingredients = value.split("/")[0].strip()
+    if not ingredients:
+        return errors
+    tokens = ingredients.split()
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        # Two-word display names ("Iron Bar", "Bat Wing", "Gold Ore").
+        if i + 1 < len(tokens) and not tokens[i + 1].lstrip("-").isdigit():
+            pair = f"{token} {tokens[i + 1]}"
+            if pair in _RECIPE_DISPLAY_NAME_INGREDIENTS:
+                errors.append(
+                    f"recipe '{recipe_id}' ingredient '{pair}' is a "
+                    f"display name, not an item id"
+                )
+                i += 2
+                if i < len(tokens) and tokens[i].lstrip("-").isdigit():
+                    i += 1
+                continue
+        if token in _RECIPE_DISPLAY_NAME_INGREDIENTS:
+            errors.append(
+                f"recipe '{recipe_id}' ingredient '{token}' is a "
+                f"display name, not an item id"
+            )
+        elif not _RECIPE_INGREDIENT_ID_RE.match(token) and not token.lstrip("-").isdigit():
+            errors.append(
+                f"recipe '{recipe_id}' ingredient '{token}' is a "
+                f"display name, not an item id"
+            )
+        i += 1
+        if i < len(tokens) and tokens[i].lstrip("-").isdigit():
+            i += 1
     return errors

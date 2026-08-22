@@ -1,0 +1,49 @@
+{
+  "Format": "2.0.0",
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/Objects",
+      "Entries": {
+        "luminous_carp": {
+          "Name": "Luminous Carp",
+          "DisplayName": "Luminous Carp",
+          "Description": "A rare carp whose scales shine with a pale inner light, visible from the mountain lake shore after dark.",
+          "Type": "Fish",
+          "Category": -4,
+          "Price": 380,
+          "Texture": "Maps/springobjects",
+          "SpriteIndex": 145,
+          "Edibility": 30,
+          "ContextTags": [
+            "fish_lake",
+            "color_white",
+            "fish_nocturnal"
+          ]
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Fish",
+      "Entries": {
+        "luminous_carp": "Luminous Carp/40/mixed/12/40/1800 2600/spring summer fall winter/both/690 .4 685 .1/4/.35/.3/3/false"
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Locations",
+      "Entries": {
+        "luminous_carp": {
+          "Id": "luminous_carp",
+          "ItemId": "luminous_carp",
+          "Chance": 0.12
+        }
+      },
+      "TargetField": [
+        "Mountain",
+        "Fish"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "Format": "2.0.0",
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/Machines",
+      "Entries": {
+        "stone_smelter": {
+          "Name": "Stone Smelter",
+          "DisplayName": "Stone Smelter",
+          "Description": "Crushes and refines raw stone into gold ore through an alchemical process.",
+          "Texture": "TileSheets/Craftables",
+          "SpriteIndex": 13,
+          "LightRadius": 0,
+          "EffectColor": "255 200 0",
+          "OutputRules": [
+            {
+              "Id": "Default",
+              "Triggers": [
+                {
+                  "Trigger": "ItemPlacedInMachine",
+                  "RequiredItemId": "(O)Stone",
+                  "RequiredCount": 10
+                }
+              ],
+              "OutputItem": [
+                {
+                  "ItemId": "(O)GoldOre",
+                  "MinStack": 1,
+                  "MaxStack": 1
+                }
+              ],
+              "MinutesUntilReady": 60
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/CraftingRecipes",
+      "Entries": {
+        "Stone Smelter": "Stone 50 CopperOre 20/Home/stone_smelter/false/default"
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Strings/UI",
+      "Entries": {
+        "StoneSmelter_Name": "Stone Smelter",
+        "StoneSmelter_Description": "Crushes and refines raw stone into gold ore through an alchemical process."
+      }
+    }
+  ]
+}

@@ -187,6 +187,76 @@ def _extract_mod_id_from_manifest_prior(
     return str(raw).lower() if isinstance(raw, str) else default
 
 
+_STAT_TO_EFFECT: dict[str, str] = {
+    "Farming": "FarmingLevel",
+    "Fishing": "FishingLevel",
+    "Mining": "MiningLevel",
+    "Foraging": "ForagingLevel",
+    "Luck": "LuckLevel",
+    "Combat": "CombatLevel",
+    "Energy": "MaxStamina",
+    "Health": "MaxStamina",
+    "Speed": "Speed",
+    "Defense": "Defense",
+    "Attack": "Attack",
+    "Immunity": "Immunity",
+    "Magnetism": "MagneticRadius",
+}
+
+_WEATHER_GSQ: dict[str, str] = {
+    "rain": "Rain",
+    "rainy": "Rain",
+    "storm": "Storm",
+    "stormy": "Storm",
+    "snow": "Snow",
+    "snowy": "Snow",
+    "wind": "Wind",
+    "windy": "Wind",
+    "sun": "Sun",
+    "sunny": "Sun",
+}
+
+
+def _official_buff_entry(
+    display_name: str,
+    description: str,
+    stat: str,
+    value: int,
+    duration: int,
+) -> dict[str, object]:
+    """Official SDV 1.6 BuffData. ``duration`` is seconds from the
+    generator contract; the game wants milliseconds."""
+    effect_key = _STAT_TO_EFFECT.get(stat, stat if stat.endswith("Level") else f"{stat}Level")
+    return {
+        "DisplayName": display_name,
+        "Description": description,
+        "IconTexture": "TileSheets\\BuffsIcons",
+        "IconSpriteIndex": 1,
+        "Duration": max(duration, 1) * 1000,
+        "Effects": {effect_key: value},
+    }
+
+
+def _weather_trigger_action(
+    action_id: str,
+    weather: str,
+    season: object,
+    buff_id: str,
+) -> dict[str, object]:
+    """DayStarted trigger that applies ``buff_id`` when the weather matches."""
+    gsq_weather = _WEATHER_GSQ.get(weather.lower(), weather.capitalize() or "Rain")
+    condition = f"WEATHER Here {gsq_weather}"
+    if isinstance(season, str) and season.strip():
+        condition = f"{condition}, SEASON {season.strip().capitalize()}"
+    return {
+        "Id": action_id,
+        "Trigger": "DayStarted",
+        "Condition": condition,
+        "Actions": [f"AddBuff {buff_id}"],
+        "MarkActionApplied": False,
+    }
+
+
 def _extract_weather_events_from_prior(
     prior_outputs: object,
 ) -> list[dict[str, object]]:
@@ -545,14 +615,10 @@ class WeatherContentJsonGenerator(BaseGenerator):
         out = GeneratorOutput()
         prior = inp.get("prior_outputs", {})
 
-        # v44 — replace the 5 inline ``prior.get(...)`` chains with
-        # shared helpers. Behaviour preserved (manifest → lowercase
-        # mod_id, events → Data/WeatherEvents EditData blocks,
-        # dialogue → Data/Characters/Dialogue/<NPC> EditData blocks,
-        # buffs → Data/Buffs EditData blocks, mails → Data/mail
-        # EditData blocks), but malformed layers now collapse silently
-        # via the helpers instead of relying on inline
-        # ``GeneratorOutput()`` defaults + ad-hoc isinstance checks.
+        # v44 helpers preserved. Events used to target the fictional
+        # Data/WeatherEvents asset; they now emit Data/TriggerActions
+        # (DayStarted + WEATHER GSQ + AddBuff). Buffs use the official
+        # 1.6 BuffData shape. Dialogue targets Characters/Dialogue/<NPC>.
         mod_id = _extract_mod_id_from_manifest_prior(prior)
         events = _extract_weather_events_from_prior(prior)
         dialogue_map = _extract_weather_dialogue_from_prior(prior)
@@ -561,49 +627,85 @@ class WeatherContentJsonGenerator(BaseGenerator):
 
         changes: list[dict] = []
 
-        # Add weather events
         for ev in events:
-            ev_name = ev.get("EventName", "unknown")
+            ev_name = str(ev.get("EventName", "unknown"))
+            buff_id = f"{ev_name}_buff"
+            effects_raw = ev.get("Effects") or []
+            first = effects_raw[0] if isinstance(effects_raw, list) and effects_raw else {}
+            if not isinstance(first, dict):
+                first = {}
+            stat = str(first.get("Stat", "Luck"))
+            value = first.get("Value", 1)
+            duration = first.get("Duration", 300)
             changes.append({
                 "Action": "EditData",
-                "Target": "Data/WeatherEvents",
+                "Target": "Data/Buffs",
                 "Entries": {
-                    ev_name: {
-                        "WeatherCondition": ev.get("WeatherCondition", ""),
-                        "Season": ev.get("Season"),
-                        "Description": ev.get("Description", ""),
-                        "Effects": ev.get("Effects", []),
-                    }
+                    buff_id: _official_buff_entry(
+                        display_name=ev_name.replace("_", " "),
+                        description=str(ev.get("Description", "")),
+                        stat=stat,
+                        value=int(value) if isinstance(value, (int, float)) else 1,
+                        duration=int(duration) if isinstance(duration, (int, float)) else 300,
+                    )
+                },
+            })
+            changes.append({
+                "Action": "EditData",
+                "Target": "Data/TriggerActions",
+                "Entries": {
+                    ev_name: _weather_trigger_action(
+                        action_id=ev_name,
+                        weather=str(ev.get("WeatherCondition", "")),
+                        season=ev.get("Season"),
+                        buff_id=buff_id,
+                    )
                 },
             })
 
-        # Add weather dialogue
         for key, text in dialogue_map.items():
             parts = key.split("_", 1)
             if len(parts) == 2:
                 weather, npc = parts
                 changes.append({
                     "Action": "EditData",
-                    "Target": f"Data/Characters/Dialogue/{npc.capitalize()}",
+                    "Target": f"Characters/Dialogue/{npc.capitalize()}",
                     "Entries": {
                         f"Weather_{weather.capitalize()}": text,
                     },
                     "When": {"Weather": weather},
                 })
 
-        # Add weather buffs
         for b in buffs:
-            b_name = b.get("BuffName", "unknown")
+            b_name = str(b.get("BuffName", "unknown"))
+            weather = str(b.get("WeatherCondition", ""))
+            stat = str(b.get("Stat", "Luck"))
+            value = b.get("Value", 1)
+            duration = b.get("Duration", 300)
             changes.append({
                 "Action": "EditData",
                 "Target": "Data/Buffs",
                 "Entries": {
-                    b_name: {
-                        "Stat": b.get("Stat", ""),
-                        "Value": b.get("Value", 0),
-                        "Duration": b.get("Duration", 300),
-                        "WeatherCondition": b.get("WeatherCondition", ""),
-                    }
+                    b_name: _official_buff_entry(
+                        display_name=b_name.replace("_", " "),
+                        description=f"+{value} {stat} in {weather} weather.",
+                        stat=stat,
+                        value=int(value) if isinstance(value, (int, float)) else 1,
+                        duration=int(duration) if isinstance(duration, (int, float)) else 300,
+                    )
+                },
+            })
+            trigger_id = f"{b_name}_trigger"
+            changes.append({
+                "Action": "EditData",
+                "Target": "Data/TriggerActions",
+                "Entries": {
+                    trigger_id: _weather_trigger_action(
+                        action_id=trigger_id,
+                        weather=weather,
+                        season=None,
+                        buff_id=b_name,
+                    )
                 },
             })
 

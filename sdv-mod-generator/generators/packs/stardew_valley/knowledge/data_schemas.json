@@ -1,14 +1,18 @@
 {
   "title": "Verified SDV 1.6 data-asset schemas (for Content Patcher EditData/Load)",
-  "source": "Shapes proven loadable in the real game (SDV 1.6.15) during this project's SMAPI load-gate tests; 'object' assets come from shipped reference mods.",
+  "source": "Shapes proven loadable in the real game (SDV 1.6.15). 'Fields' replace semantics confirmed against Content Patcher EditData docs; machine pair against wiki Modding:Machines / Modding:Big craftables; fish fields against wiki Modding:Fish data; buffs against wiki Modding:Buffs.",
   "rules": [
     "content.json 'Format' must be '2.0.0' or newer (never the legacy 1.x version).",
     "Each EditData change must include at least one of: Entries, Fields, MoveEntries, TextOperations.",
     "'Fields' keys: for string-value assets (pipe/caret-delimited) use INTEGER indices (\"0\", \"1\", ...). For typed-object assets use the C# property name. Never use a field NAME on a string-value record.",
+    "'Fields' REPLACES the named property on an existing entry. Never use Fields to set a list you want to append to (e.g. Data/Locations Fish) — that wipes vanilla entries. Append with TargetField + Entries instead.",
     "'FromFile' is valid ONLY on Load and EditImage, never on EditData.",
     "'Load' requires both Target and FromFile.",
     "EditMap MapTiles tiles need 'Position': {\"X\": .., \"Y\": ..} and use SetIndex/SetTilesheet (NOT TileIndex/TileSheet).",
     "When-tokens must come from the Content Patcher whitelist (see content_actions.json).",
+    "Crafting/cooking recipe ingredients are numeric IDs, qualified IDs, or unique string IDs (390, (O)390, Moss) — never display names (Stone, Iron Bar, CopperOre, Wood, Coal).",
+    "Do not emit assets that do not exist in SDV 1.6 (no fictional weather-event or buff-data assets).",
+    "A new machine requires BOTH Data/BigCraftables (unqualified id) AND Data/Machines keyed (BC)<id>.",
     "Prefer a minimal change set: one well-formed record beats ten speculative edits."
   ],
   "assets": {
@@ -32,12 +36,15 @@
     },
     "Data/CraftingRecipes": {
       "value": "string (pipe-delimited)",
-      "format": "Ingredients (itemId amount itemId amount ...)/IsCookingRecipe(Home=crafting, Field=cooking)/UnlockCondition/resultItemId/default",
-      "example": "\"Wooden_Bench\": \"Wood 50/Home/Wood_Bench/false/default\""
+      "format": "itemId amount itemId amount .../unused(Home|Field)/yieldItemId/isBigCraftable(true|false)/unlock",
+      "example": "\"Stone Smelter\": \"390 50 378 20/Home/stone_smelter/true/default\"",
+      "note": "Ingredients are IDs not names: 390=Stone, 378=Copper Ore, 388=Wood, 382=Coal. 4th field must be true when the yield is a big craftable."
     },
     "Data/CookingRecipes": {
       "value": "string (pipe-delimited)",
-      "example": "\"Berry_Smoothie\": \"Blueberry 2 Milk 1/1 10/Berry_Smoothie/default\""
+      "format": "itemId amount .../unused/yieldItemId/unlock",
+      "example": "\"Berry Smoothie\": \"258 2 186 1/1 10/Berry_Smoothie/default\"",
+      "note": "258=Blueberry, 186=Milk. Never use display names as ingredients."
     },
     "Data/Objects": {
       "value": "object (ObjectData)",
@@ -47,11 +54,14 @@
     },
     "Data/Fish": {
       "value": "string (pipe-delimited)",
-      "example": "\"luminous_carp\": \"Luminous Carp/80/floater/1/8/0 2600/spring summer fall winter/both/0/.5/0/0/0/false/690 .05 168 .03/false\""
+      "format": "name/chanceToDart/darting(mixed|smooth|floater|sinker|dart)/minSize/maxSize/minTime maxTime/season/weather(sunny|rainy|both)/locationsUnused/maxDepth(int)/chance/depthMultiplier/fishingLevel/tutorialEligible",
+      "example": "\"luminous_carp\": \"Luminous Carp/80/floater/1/8/1800 2600/spring summer fall winter/both/690 .4 685 .1/4/.5/.5/0/false\"",
+      "note": "Exactly 14 slash-separated fields (indices 0-13). Index 9 (maxDepth) is an INTEGER, never a float. Do not append extra bait tokens."
     },
     "Data/Locations": {
       "value": "object (LocationData)",
-      "note": "Complex and error-prone. Prefer NOT editing Data/Locations. If unavoidable, use full LocationData objects and 'Fields' keys must be property names (e.g. \"Fish\"). A malformed record breaks the whole asset."
+      "note": "NEVER use Fields to set Fish — that replaces the entire spawn list and wipes vanilla fish. To append one spawn use TargetField: [\"Mountain\", \"Fish\"] with Entries keyed by spawn Id, and ItemId (not FishId).",
+      "example": "TargetField [\"Mountain\", \"Fish\"], Entries: {\"my_fish\": {\"Id\": \"my_fish\", \"ItemId\": \"luminous_carp\", \"Chance\": 0.12}}"
     },
     "Data/Characters": {
       "value": "object (CharacterData)",
@@ -62,13 +72,29 @@
       "value": "object (BuildingData)",
       "example": "{\"BuildingType\": \"Shed\", \"Width\": 3, \"Height\": 3, \"Description\": \"...\", \"Cost\": 300, \"Materials\": [{\"ItemName\": \"Wood\", \"Quantity\": 100}]}"
     },
-    "Data/WeatherEvents": {
-      "value": "object",
-      "fields": ["WeatherCondition", "Season", "Description", "Effects[{Stat, Value, Duration}]"]
+    "Data/BigCraftables": {
+      "value": "object (BigCraftableData)",
+      "fields": ["Name", "DisplayName", "Description", "Texture", "SpriteIndex"],
+      "example": "{\"Name\": \"Stone Smelter\", \"DisplayName\": \"Stone Smelter\", \"Description\": \"Turns stone into gold ore.\", \"Texture\": \"TileSheets/Craftables\", \"SpriteIndex\": 13}",
+      "note": "The dictionary key is the unqualified item ID (e.g. stone_smelter). A machine also needs a Data/Machines entry keyed (BC)<this id>."
+    },
+    "Data/Machines": {
+      "value": "object (MachineData)",
+      "fields": ["OutputRules"],
+      "example": "{\"(BC)stone_smelter\": {\"OutputRules\": [{\"Id\": \"Default\", \"Triggers\": [{\"Id\": \"Input\", \"Trigger\": \"ItemPlacedInMachine\", \"RequiredItemId\": \"(O)390\", \"RequiredCount\": 10}], \"OutputItem\": [{\"Id\": \"Out\", \"ItemId\": \"(O)384\", \"MinStack\": 1}], \"MinutesUntilReady\": 60}]}}",
+      "note": "Every Entries key MUST be a qualified big-craftable ID starting with (BC). Pair with Data/BigCraftables. RequiredItemId/ItemId are qualified object IDs like (O)390, never (O)Stone."
     },
     "Data/Buffs": {
-      "value": "object",
-      "fields": ["Stat", "Value", "Duration", "WeatherCondition"]
+      "value": "object (BuffData)",
+      "fields": ["DisplayName", "Description", "IconTexture", "IconSpriteIndex", "Duration", "Effects"],
+      "example": "{\"DisplayName\": \"Storm Charged\", \"Description\": \"+2 luck.\", \"IconTexture\": \"TileSheets\\\\BuffsIcons\", \"IconSpriteIndex\": 14, \"Duration\": 600000, \"Effects\": {\"LuckLevel\": 2}}",
+      "note": "Duration is milliseconds (600000 = 10 minutes). Effects uses skill/stat fields (LuckLevel, Speed, Attack, ...), not Stat/Value/WeatherCondition. A Data/Buffs entry does nothing by itself — apply it via Data/Objects Buffs (food) or Data/TriggerActions AddBuff."
+    },
+    "Data/TriggerActions": {
+      "value": "list (TriggerActionData)",
+      "fields": ["Id", "Trigger", "Condition", "Actions", "MarkActionApplied"],
+      "example": "{\"Id\": \"rainy_fishing\", \"Trigger\": \"DayStarted\", \"Condition\": \"WEATHER Here Rain\", \"Actions\": [\"AddBuff rainy_day_fishing\"], \"MarkActionApplied\": false}",
+      "note": "There is no weather-event data asset. Apply a weather buff with Trigger DayStarted, Condition WEATHER Here Rain|Storm|Snow|Wind|Sun (optional SEASON Spring), Actions AddBuff <buffId>, and MarkActionApplied false so it can repeat. EditData Entries key must equal the Id field."
     },
     "Data/tvChannels": {
       "value": "object",
@@ -81,7 +107,7 @@
     "Characters/Dialogue/<NpcName>": {
       "value": "object (string dict)",
       "example": "\"spring_1\": \"Hi @, I'm Linus.\"",
-      "note": "Keys are day/season/event names. The 'Data/Characters/Dialogue/<NpcName>' target form is also accepted."
+      "note": "Target MUST be Characters/Dialogue/<NpcName> (e.g. Characters/Dialogue/Willy). Do not prefix with Data/ — the game does not read Data/Characters/Dialogue/<Npc>."
     },
     "Characters/schedules/<NpcName>": {
       "value": "object (string dict)",

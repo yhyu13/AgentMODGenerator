@@ -115,6 +115,17 @@ class TestEmbeddedDataSchemas:
         assert "Data/Locations" in section
         assert "Integer" in section or "integer" in section  # Fields-index rule
         assert "2.0.0" in section  # Format rule
+        # Shapes the real-game audit of LLM llm_schema_{1,2,3} proved missing
+        # or wrong in the "verified" file. The model must see these, not the
+        # fictional Data/WeatherEvents asset.
+        assert "(BC)" in section
+        assert "ItemId" in section
+        assert "TargetField" in section
+        assert "Data/WeatherEvents" not in section
+        assert "Data/BuffData" not in section
+        assert "Data/BigCraftables" in section
+        assert "Data/Machines" in section
+        assert "Data/TriggerActions" in section
 
     def test_schema_section_renders_into_system_prompt(self) -> None:
         from generators.packs.stardew_valley.features.general_author import (
@@ -124,3 +135,14 @@ class TestEmbeddedDataSchemas:
         prompt = _general_author_system_prompt()
         assert "Data/Achievements" in prompt
         assert "VERIFIED" in prompt
+        # The bundled STARDEW_VALLEY_MOD_STANDARDS.md (weather_event
+        # follow-up) still names the fictional weather-event asset; pin
+        # the prefix we own — everything after the general-author intro.
+        marker = "You are a GENERAL Content Patcher author"
+        assert marker in prompt
+        owned = prompt[prompt.index(marker):]
+        assert "Data/BuffData" not in owned
+        assert "Data/WeatherEvents" not in owned
+        assert "TargetField" in owned
+        assert "(BC)" in owned
+        assert "Data/BigCraftables" in owned
