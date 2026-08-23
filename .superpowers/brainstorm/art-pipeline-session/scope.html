@@ -1,0 +1,47 @@
+<h2>Where should this art pipeline live?</h2>
+<p class="subtitle">This is the fork that decides everything else. Click one, then reply in the terminal.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>In-repo image backend</h3>
+      <p>Add an <code>ImageClient</code> protocol next to the existing LLM client. MiniMax is the first provider. Current SDV generators (<code>ItemSpritesGenerator</code>, <code>UIAssetsGenerator</code>, <code>TextureGenerator</code>) call it instead of <code>_make_png()</code>.</p>
+      <p class="subtitle">Smallest change. Art is a dependency of generators, not its own pipeline.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Generic art pipeline (recommended)</h3>
+      <p>A game-agnostic stage: <strong>ArtSpec → generate → post-process → AssetManifest</strong>. Image models (MiniMax first) are swappable providers. SDV is the first adapter that maps specs to Content Patcher paths + <code>EditImage</code>.</p>
+      <p class="subtitle">Matches “generic” in your ask. Logic pipeline stays; art becomes a parallel track with its own contract.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Standalone art service</h3>
+      <p>Separate package/service. Prompt in, zip of sprites/UI/maps out. This repo only HTTP-calls it. No SDV knowledge inside the art service.</p>
+      <p class="subtitle">Most reusable, most work, overkill until a second game pack exists.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="label">What “generic” means in B</p>
+  <div class="mockup">
+    <div class="mockup-header">Art pipeline vs current logic pipeline</div>
+    <div class="mockup-body">
+      <pre style="margin:0;font-size:13px;line-height:1.5;white-space:pre-wrap">prompt
+  ├─ logic track (already exists)
+  │    Route → generators → T1 → T2 → zip
+  └─ art track (new)
+       ArtSpec (kind, size, style, slot)
+         → ImageProvider.generate()   # MiniMax / later others
+         → PostProcess (crop, palette, PNG, sheets)
+         → AssetManifest (path, pixels, EditImage rect)
+         → packager writes real bytes into the zip</pre>
+    </div>
+  </div>
+</div>

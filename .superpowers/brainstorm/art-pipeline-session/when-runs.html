@@ -1,0 +1,42 @@
+<h2>When does the art stage run?</h2>
+<p class="subtitle">Sheet layout is LLM-emitted. It needs to know how many item cells exist. That list comes from the logic generators. Click one.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>After logic, before T1 (recommended)</h3>
+      <p>Route → logic generators (item pool, TV, mail, …) → <strong>art stage</strong> (grid spec → MiniMax → slice → PNG bytes + EditImage patches) → T1 → T2 → zip.</p>
+      <p class="subtitle">ArtSpec is built from <code>prior_outputs</code>. T1 can check PNG dimensions, palette size, and that every EditImage FromFile exists. One extra node on the existing LangGraph.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Inside the existing sprite/UI generators</h3>
+      <p>No new graph node. <code>ItemSpritesGenerator</code> / <code>UIAssetsGenerator</code> call the art pipeline as a library. Same execution_order as today.</p>
+      <p class="subtitle">Less plumbing. Art is hidden inside two generators, so T1 never sees a first-class art stage. Harder to share across phases (texture later).</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Parallel with logic</h3>
+      <p>Art starts from the user prompt alone, same time as logic. Faster wall-clock. Grid cannot use the real item list — it guesses names. Slices and shop TSV drift.</p>
+      <p class="subtitle">Reject for v1. You already chose LLM-emitted grid; that grid must see logic output.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="label">Recommended graph</p>
+  <div class="mockup">
+    <div class="mockup-header">LangGraph (logic already exists; art is one node)</div>
+    <div class="mockup-body">
+      <pre style="margin:0;font-size:13px;line-height:1.6">Route → Generate(logic) → Art → T1 → T2 → Package
+                         │
+                         └ prior_outputs: items, channel, mail keys
+                           ArtSpec.slots[] sized to that list</pre>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,37 @@
+<h2>What happens when MiniMax fails?</h2>
+<p class="subtitle">No key, 1002 rate-limit, 1026 sensitive prompt, or a grid spec T1 would reject. Click the policy.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Fail the request</h3>
+      <p>Art node errors → pipeline status <code>failed</code>. Same as a missing generator. Honest. Useless for local tests without <code>MINIMAX_API_KEY</code> (the current test isolation fixture unsets LLM keys for a reason).</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Per-slot fallback, zip still ships (recommended)</h3>
+      <p>Validate the grid spec first. If the image call fails (or a slice is empty / too noisy), that slot becomes <code>_make_png()</code> and metadata records <code>art_fallback: true</code>. T1 still requires the PNG to exist at the path. Logic-only tests stay green without a MiniMax key.</p>
+      <p class="subtitle">Mirrors existing generator fallbacks (manifest/TV/mail already do this). Cap retries at 1. No busy-loop.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Skip art entirely if no key</h3>
+      <p>If <code>MINIMAX_API_KEY</code> is unset, art node is a no-op and generators keep today’s solid-color stubs. If the key is set, any API error fails the request.</p>
+      <p class="subtitle">Clean split for CI vs prod. Prod then has no fallback — a 1002 takes down the whole mod.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="label">Hard constraints either way</p>
+  <ul>
+    <li>Do not retry MiniMax in a loop. One retry on 1002, then fallback or fail.</li>
+    <li>Budget: max images per request (suggest 2 sheet calls, <code>n=1</code> each).</li>
+    <li>Unset <code>MINIMAX_API_KEY</code> in <code>tests/conftest.py</code> like the other secrets.</li>
+  </ul>
+</div>

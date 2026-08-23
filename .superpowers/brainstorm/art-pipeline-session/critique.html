@@ -1,0 +1,40 @@
+<h2>Critique — Approach 1 as stated would not ship art</h2>
+<p class="subtitle">Five holes. The improved contract below closes them without dropping your locked choices.</p>
+
+<div class="section">
+  <p class="label">Hole 1 — content.json is already sealed</p>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">Approach 1 (broken)</div>
+      <div class="mockup-body">
+        <pre style="margin:0;font-size:12px;line-height:1.5">generate
+  … item_sprites, ui_assets,
+    content_json_generator   ← writes content.json
+                             ← no EditImage
+Art node                     ← PNGs exist, game never loads them
+T1</pre>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">Fix</div>
+      <div class="mockup-body">
+        <pre style="margin:0;font-size:12px;line-height:1.5">generate (same node, order change)
+  … item pool / tv / mail
+  art_sheet_generator        ← MiniMax, slice, PNG bytes
+  content_json_generator     ← reads art metadata
+                             ← emits Load + EditImage
+T1                           ← checks PNG size + FromFile exists</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="label">The other four</p>
+  <ul>
+    <li><strong>LLM pixel grid is a lie.</strong> MiniMax min is 512. An 8×8 of 16px cells is 128px. LLM will emit overlapping rects. Keep LLM slots; a packer assigns pixels.</li>
+    <li><strong>Prompt cap 1500 chars.</strong> Per-cell novels do not fit. One compact sheet prompt.</li>
+    <li><strong>JPEG, no alpha.</strong> Your sample writes <code>.jpeg</code>. SDV needs keyed transparency.</li>
+    <li><strong>T2 retry re-bills MiniMax.</strong> Art must no-op if PNG bytes already in <code>state.outputs</code>.</li>
+  </ul>
+</div>
