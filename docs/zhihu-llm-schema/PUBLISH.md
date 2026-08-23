@@ -10,18 +10,19 @@
 
 ## 导语（30–40 字，可作开头摘要）
 
-别让模型当万能厨师。教的和查的同一本说明书，过门才打包。完成听游戏日志，不听「我写好了」。
+星露谷是考场。验的是 Agent 套件能不能把目标钉住，直到游戏日志认账。不是「会不会写模组」。
 
 ## 配图上传顺序（与正文出现顺序一致）
 
-1. `images/05-wrong.png` — 错路 / 正路
-2. `images/06-thread.png` — 需求到切开的脉络
-3. `images/00-terms.png` — 加载器 / 补丁 / 说明书 / 门
-4. `images/01-tree.png` — 树根 / 主干 / 四根分支
-5. `images/03-trunk.png` — 教的和查的同一本
-6. `images/04-leaves.png` — 三份能挂上的包
-7. `images/08-evidence.png` — 「我写好了」不算完
-8. `images/07-takeaway.png` — 六条可抄走的判断
+1. `images/09-why.png` — 星露谷是考场，验套件四项
+2. `images/05-wrong.png` — 错路 / 正路
+3. `images/06-thread.png` — 需求到切开的脉络
+4. `images/00-terms.png` — 加载器 / 补丁 / 说明书 / 门
+5. `images/01-tree.png` — 树根 / 主干 / 四根分支
+6. `images/03-trunk.png` — 教的和查的同一本
+7. `images/04-leaves.png` — 三份能挂上的包
+8. `images/08-evidence.png` — 「我写好了」不算完
+9. `images/07-takeaway.png` — 六条可抄走的判断
 
 正文里的 `![…](images/….png)` 粘贴后不会自动带上本地文件；在对应位置插入刚上传的图即可。
 
