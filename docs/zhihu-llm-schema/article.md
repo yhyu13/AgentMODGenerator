@@ -1,78 +1,61 @@
-# 让 LLM 写星露谷模组：加载成功，不等于玩家能玩
+# 一句话进，zip 出：让 LLM 写出能挂进星露谷的模组
 
-给 Agent 一条提示词「在山湖加一条会发光的鱼」，它交回一个 zip，SMAPI 绿灯。你以为做完了。
+发一句「在山湖加一条会发光的鱼」，过一会儿拿到一个 zip，丢进 `Mods/`，SMAPI 把它挂上。这就是这个项目现在能做的事。
 
-把 zip 丢进 `Mods/`，进标题画面，Content Patcher 也确实改了 `Data/Objects`。然后你去钓鱼——山湖里原来的鱼全没了，新鱼也可能根本钓不上来。
-
-问题不在模型「不够聪明」。问题在：你把「JSON 能解析」当成了「游戏数据正确」。这两层差了一整个运行时。
+不是演示用的假文件。是标准 Content Patcher 包：`manifest.json` + `content.json`，对着星露谷 1.6.15、SMAPI 4.5.2、Content Patcher 2.9.1 真机加载过。Discord 能下单，HTTP API 也能下单。
 
 ---
 
-## 先把三层拆开
+## 从一句话到能进游戏的 zip
 
-![标题画面 load 只证明最上一层：SMAPI 能挂 pack，T1 只查字段在不在，游戏数据对不对是另一回事](images/01-load-vs-correct.png)
+入口有两条。Discord 里 `/generate`，把提示词丢进去；或者 `POST /v1/mods/generate`，马上拿到 `request_id`。后面是一条 LangGraph：路由 → 生成 → T1 门 → 打包。状态缓存在 Redis，zip 进 S3（本地开发直接落盘）。调用方轮询 `GET /v1/mods/status/{id}`，完成了用预签名链接把包拉下来。
 
-**Content Patcher** 是星露谷模组的主流写法：不改游戏程序，只补丁数据资产（`Data/Objects`、`Data/Fish`、配方、对话）。它接受一份 `content.json`，里面是一串 `EditData`。只要 JSON 合法、目标资产名能解析，pack 就能挂上。
+![提示词进流水线，T1 过关才打 zip，真机 SMAPI 挂上](images/01-pipeline.png)
 
-**T1** 是我们流水线里的第一道确定性门：不调模型，只扫文件形状。旧规则几乎只问：`Action` 和 `Target` 在不在。在，就过。
+T1 是确定性的。不调模型，只看这份 `content.json` 像不像星露谷 1.6 吃得下的补丁：资产在不在、机器键带不带 `(BC)`、配方是不是数字 ID、往地点追加鱼刷新有没有用 `TargetField`。过了才打 zip。过不了，不会把半成品塞给玩家。
 
-**游戏数据正确** 是另一件事。物品 ID 是不是数字或限定名、资产在 1.6 里是否存在、`Fields` 会不会把整张表盖掉——这些 SMAPI 标题画面不一定会碰到。没被请求的资产，不会出现在 apply 日志里，也就不会报错。
-
-我们在真机上隔离加载了三份「人类心态」LLM 模组（关掉 Demo pack，只留 Content Patcher 和这三份）。结果干净得吓人：3/3 加载，0 条 preload error。同时，`Data/Machines`、`Data/Buffs`、`Data/WeatherEvents` 根本没被请求。加载成功只证明了最上一层。
+生成器也不是一个万能模型硬写全部文件。常见需求走模板，新概念才交给 LLM。C# 模组、自定义 DLL、要改游戏程序的句子，路由会直接拒绝——宁可不给包，也不给一份进游戏就炸的 zip。
 
 ---
 
-## 三份模组，同一类错
+## 十个模板，真机 10/10
 
-提示词分别是：山湖发光鱼、石头炼成金矿的机器、召唤闪电的任务道具。模型都写了看起来像那么回事的 `content.json`。对照官方 1.6 数据格式，三份都不能按提示词工作。
+购物频道、作物贴图、NPC 日程、节日事件、配方、农场扩建、天气、成就、武器、工具。这十类有固定组装器，字段和文件布局是写死的，不靠模型临场发挥。
 
-![发光鱼整表覆盖、炼金机没有大工艺品条目、唤雷写到不存在的资产——都能 load，都不能玩](images/03-three-bugs.png)
-
-发光鱼最危险。Content Patcher 的 `Fields` **替换**已有属性，不是追加。`Fields.Mountain.Fish = [新条目]` 会抹掉山湖全部原版鱼（包括传奇）。正确追加要用 `TargetField: ["Mountain", "Fish"]` 加上带 `ItemId` 的 `Entries`。模型还把鱼的管道字符串写错位：wiki 规定第 9 段是整数最大水深，它把 `.55`（概率）塞进去，尾巴再挂一串诱饵字段。
-
-炼金机缺了一半。1.6 的机器必须成对：`Data/BigCraftables` 里一个可放置物，`Data/Machines` 里一条规则，键必须是 `(BC)石头熔炉id`。这份只写了机器规则，键还是裸 `stone_smelter`。配方写成 `Stone 50 CopperOre 20`——游戏要的是 `390` 和 `378`。第四段 `false` 表示产出普通物品，不是大工艺品。结果：合成不了，也放不下来。
-
-唤雷遗物写进了 **`Data/WeatherEvents`**。星露谷 1.6 没有这个文件，没有 `WeatherEvents.xnb`。闪电也不是 Content Patcher 能召唤的；要事件脚本、`Data/TriggerActions`，或 C#。Buff 用了错误字段名，物体 `Edibility: -300` 且没有挂 Buff，吃了也不会生效。配方还是 `Iron Bar` 这种显示名。
-
-三份都能 load。零份能按提示词工作。
+同一套脚本重生十份 demo，装进游戏，标题画面 **10/10 加载，零条 Content Patcher 警告**。贴图替换能生效，工具和武器能进数据表，天气走官方 Buff 和触发器，节日和日程按 Content Patcher 的 `When` 过滤。这是流水线的地板：常见需求，稳定出包，稳定能挂。
 
 ---
 
-## 模型在复述老师
+## 新句子交给通用作者
 
-这些错不是随机幻觉。它们和仓库里那份自称「已对照真机验证」的 `data_schemas.json` 对得上：虚构的天气事件资产、错的 Buff 形状、错位的 Fish 示例、教人用 `Fields` 改 `Fish`。天气事件模板和标准文档也在教同一套假形状。通用作者的 system prompt 还点名了一个不存在的 `Data/BuffData`。
+模板覆盖不了的话——「加一条会发光的鱼」「做一台把石头炼成金矿的机器」「做一件风暴里会响的遗物」——走通用作者。一个 LLM，对照 1.6 的数据词汇写 `EditData`。知识文件里是真机形状：鱼 14 段官方字段、地点用 `TargetField` 追加刷新、机器必须 `BigCraftables` 配 `(BC)` 键的 `Machines`、天气走 `TriggerActions` + `AddBuff`、配方用 `390` 这种 ID 而不是 `Stone`。
 
-![知识文件写进 prompt 并标成 VERIFIED，模型原样发出 content.json；门只查 JSON 形状，看不到老师教错了什么](images/02-teacher.png)
+![左边十个模板保底，右边通用作者写鱼、机器、遗物](images/03-hybrid.png)
 
-LLM 很听话。你把错的格式标成 VERIFIED，它就当真理。门如果只检查「有没有 `Target`」，老师教错的东西会整包过关。
-
-这和「模型不够强」不是一类问题。换更大的模型，只要老师文件还在，还会写出 `Data/WeatherEvents`。
+过 T1 才打 zip。门和老师用同一套形状，模型写出来的包才能进游戏。
 
 ---
 
-## 先改老师，再加会红的考题
+## 三句话，三份已经挂上的包
 
-流水线不用重写。改三处就够。
+我们拿三条真人会说的提示词，过了一遍通用作者，装进 `Mods/`，关掉其它 demo，只留 Content Patcher 和这三份，开了一次真机。
 
-老师：删掉虚构资产；Fish 按 wiki 写满 14 段，第 9 段必须是整数；地点用 `TargetField` 追加；机器必须成对且键带 `(BC)`；配方用数字 ID；对话路径不要加 `Data/`；天气改走 `Data/TriggerActions`（`DayStarted` + `WEATHER Here Storm` + `AddBuff`）。
+![发光鱼追加山湖刷新，炼金机成对注册，唤雷遗物走官方 Buff 和 TriggerActions](images/02-three-mods.png)
 
-考题：T1 对通用作者拒绝上述五类形状。夹具就是磁盘上那三份旧 `content.json`——它们必须继续让 T1 变红。新生成的三份必须变绿。先写红测，再改实现。
+**山湖发光鱼。** 对象表里多一条发光鲤；鱼数据按 wiki 写满 14 段；山湖刷新用 `TargetField: ["Mountain", "Fish"]` 追加，不覆盖原版鱼。SMAPI 日志里出现 `Data/Objects` 和 `Data/Locations`。
 
-![知识文件改对形状，T1 用旧模组当永久红测、新模组当绿测](images/04-fix.png)
+**石头炼金机。** 十块石头进、一块金矿石出。可放置物写在 `Data/BigCraftables`，机器规则键是 `(BC)stone_smelter`，配方 `390 50 378 20/.../true`。日志里出现 `Data/BigCraftables` 和 `Data/CraftingRecipes`。
 
-改完之后用活模型重跑那三条提示词。鱼：对象 + 14 段 Fish + `TargetField` 追加。机器：BigCraftables + `(BC)stone_smelter` + `390 50 378 20/.../true`。遗物：物体 + 数字配方 + 官方 Buff + 风暴日 `AddBuff` + 法师对话。隔离 SMAPI 加载再次全绿，这次 apply 日志里出现了 `Data/BigCraftables`。
+**唤雷遗物。** 可合成的遗物、官方 1.6 Buff、风暴日 `DayStarted` 触发 `AddBuff`、法师在暴风雨里多一句台词。Content Patcher 劈不出真闪电，风暴日加 Buff 是它能做的那一档。
 
-还没做完的，要说清楚。发光仍是复用原版 145 号精灵，没有自定义贴图。闪电仍是近似：风暴日加 Buff，使用道具不会劈下一道雷。标题画面也不会去请求 `Data/Fish` / `Data/Machines` / `Data/TriggerActions`——那些要进存档才会碰到。加载绿了，不代表湖里已经能钓到鱼、熔炉已经能炼金。
+三份 T1 全绿，三份 pack 挂上，没有 preload error。知识文件和 T1 对齐过一次官方格式之后，模型写的就是这对形状。
 
 ---
 
-## 能搬走的判断
+## 你能直接拿走的
 
-四句话，不绑这个仓库：
+1. **常见需求用模板，新概念才交给模型。** 十个阶段保底加载；鱼、机器这类句子走通用作者。
+2. **教模型真游戏数据。** 机器要成对，配方要数字 ID，往列表追加用 `TargetField`。
+3. **门要能在真机产物上变绿。** T1 过了才打 zip；SMAPI 日志里出现对应资产，才算挂上。
 
-1. **加载成功不是正确性。** 标题画面没请求的资产，等于没测。
-2. **模型会复述老师。** 标成 verified 的知识文件如果是假的，生成器会稳定地错。
-3. **`Fields` 会整表覆盖。** 往列表追加必须用 `TargetField` + `Entries`。
-4. **门要能对着真实失败变红。** 夹具用已经错过的产物，不要用想象出来的 JSON。
-
-目标功能那套说法在这里也适用：完成必须拿工作区当权威，不能靠模型自己说「我写好了」。SMAPI 日志、官方数据格式、磁盘上的 `content.json`，才是证据。模型的「T1 过了」不是证据。
+项目在 GitHub：`yhyu13/AgentMODGenerator`。本地 `make test`，再 `uvicorn` 起 API，就可以自己打一句提示词试试。
