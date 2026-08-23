@@ -6,20 +6,22 @@
 
 ## 标题
 
-一句话进，zip 出：让 LLM 写出能挂进星露谷的模组
+让 LLM 写星露谷模组，不要让模型硬写全部文件
 
 ## 导语（30–40 字，可作开头摘要）
 
-发一句提示词，拿到 Content Patcher zip，丢进 Mods，SMAPI 挂上。十个模板全绿，三条 LLM 模组真机加载过。
+形状是真相，过门才打包。先弄清 SMAPI 和 Content Patcher，再看树根、主干、分支为什么这样切。
 
 ## 配图上传顺序
 
-1. `images/01-pipeline.png` — 提示词到真机的流水线
-2. `images/03-hybrid.png` — 模板保底 + 通用作者写新概念
-3. `images/02-three-mods.png` — 鱼 / 机器 / 遗物三份能挂上的包
+1. `images/00-terms.png` — SMAPI / Content Patcher / 老师 / T1
+2. `images/01-tree.png` — 树根 / 主干 / 四根分支
+3. `images/02-is-isnt.png` — 是什么 / 不是什么
+4. `images/03-trunk.png` — 老师教形状，门卡同一套
+5. `images/04-leaves.png` — 三份能挂上的包
 
 正文里的 `![…](images/….png)` 粘贴后不会自动带上本地文件；在对应位置插入刚上传的图即可。
 
 ## 标签建议
 
-Agent、LLM、游戏模组、Stardew Valley、Content Patcher
+Agent、LLM、游戏模组、Stardew Valley、系统设计
