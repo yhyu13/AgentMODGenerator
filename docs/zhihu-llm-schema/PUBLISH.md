@@ -10,15 +10,18 @@
 
 ## 导语（30–40 字，可作开头摘要）
 
-一句话能出进游戏的 zip。靠的不是更大的模型，而是模板保底、说明书和检查同一套、以 SMAPI 日志为完成。
+别让模型硬写全部文件。说明书和检查同一套，过门才打包。完成看游戏日志，不看「我写好了」。
 
-## 配图上传顺序
+## 配图上传顺序（与正文出现顺序一致）
 
-1. `images/00-terms.png` — SMAPI / Content Patcher / 老师 / T1
-2. `images/01-tree.png` — 树根 / 主干 / 四根分支
-3. `images/02-is-isnt.png` — 是什么 / 不是什么
-4. `images/03-trunk.png` — 老师教形状，门卡同一套
-5. `images/04-leaves.png` — 三份能挂上的包
+1. `images/05-wrong.png` — 错路 / 正路
+2. `images/06-thread.png` — 需求到切开的脉络
+3. `images/00-terms.png` — SMAPI / Content Patcher / 说明书 / 门
+4. `images/01-tree.png` — 树根 / 主干 / 四根分支
+5. `images/02-is-isnt.png` — 是什么 / 不是什么
+6. `images/03-trunk.png` — 老师教形状，门卡同一套
+7. `images/04-leaves.png` — 三份能挂上的包
+8. `images/07-takeaway.png` — 六条可抄走的判断
 
 正文里的 `![…](images/….png)` 粘贴后不会自动带上本地文件；在对应位置插入刚上传的图即可。
 
