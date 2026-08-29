@@ -32,6 +32,7 @@ from generators.packs.stardew_valley.features.npc_schedule import (
     NPCContentJsonGenerator,
 )
 from generators.packs.stardew_valley.features.texture import TextureGenerator
+from generators.packs.stardew_valley.features.sprite import SpriteGenerator
 from generators.packs.stardew_valley.features.event_mod import (
     FestivalScheduleGenerator,
     FestivalShopGenerator,
@@ -82,7 +83,7 @@ _MANIFEST = GameManifest(
     display_name="Stardew Valley",
     mod_format="ContentPatcher",
     supported_phases=[
-        "shop_channel", "texture", "npc_schedule", "event_mod",
+        "shop_channel", "texture", "sprite", "npc_schedule", "event_mod",
         "custom_crafting", "farm_expansion", "weather_event", "achievements",
         "weapon_definition", "tool_definition", "general_author",
     ],
@@ -139,6 +140,17 @@ class StardewValleyPack(GamePack):
                 phase=phase,
                 generators=[SharedManifestGenerator, TextureGenerator],
                 execution_order=["manifest_generator", "texture_generator"],
+            )
+        if phase == "sprite":
+            # The sprite generator is self-contained: it emits its own
+            # manifest.json + content.json + Assets/sprite.png (the image
+            # API + downsample/quantize pipeline), so it needs no shared
+            # manifest_generator in its execution order — same shape as
+            # weather_event / weapon_definition / tool_definition.
+            return PhaseGenerators(
+                phase=phase,
+                generators=[SpriteGenerator],
+                execution_order=["sprite_generator"],
             )
         if phase == "npc_schedule":
             return PhaseGenerators(

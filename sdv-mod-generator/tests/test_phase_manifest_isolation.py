@@ -27,7 +27,7 @@ from generators.core import get_game_pack
 from tests.smapi_validate import validate_manifest, validate_zip_contents
 
 ALL_PHASES = [
-    "shop_channel", "texture", "npc_schedule", "event_mod",
+    "shop_channel", "texture", "sprite", "npc_schedule", "event_mod",
     "custom_crafting", "farm_expansion", "weather_event", "achievements",
     "weapon_definition", "tool_definition",
 ]
@@ -70,6 +70,14 @@ def test_phase_standalone_produces_loadable_zip(phase, tmp_path, monkeypatch):
     from pathlib import Path
 
     monkeypatch.setattr(packager_module, "_LOCAL_OUTPUT_DIR", str(tmp_path))
+
+    if phase == "sprite":
+        # The sprite generator requires an image API key (or explicit
+        # deterministic mode); there is no LLM fallback for image
+        # generation. Run the deterministic sample so the phase-isolation
+        # contract (every phase produces a loadable zip standalone) holds
+        # in the no-LLM test env.
+        monkeypatch.setenv("SPRITE_DETERMINISTIC", "1")
 
     outputs = asyncio.run(_run_phase_standalone(phase, f"req_{phase}"))
 
@@ -121,7 +129,7 @@ def test_every_phase_registers_manifest_generator():
     """
     pack = get_game_pack("stardew_valley")
     assert pack is not None
-    no_dedicated_manifest_gen = {"weather_event", "weapon_definition", "tool_definition"}
+    no_dedicated_manifest_gen = {"weather_event", "weapon_definition", "tool_definition", "sprite"}
     for phase in ALL_PHASES:
         pg = pack.get_generators(phase)
         has_manifest_gen = (

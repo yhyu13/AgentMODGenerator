@@ -27,12 +27,18 @@ class TestRoute:
         assert "shop_item_pool_generator" in hint["generators"]
 
     def test_texture_routing(self):
-        phase, hint = route("replace the parsnip crop sprite")
+        phase, hint = route("replace the parsnip crop texture")
         assert phase == "texture"
         assert hint["game"] == "stardew_valley"
         # Manifest-first order since the MVP audit (texture was
         # manifestless and produced unloadable zips standalone).
         assert hint["generators"] == ["manifest_generator", "texture_generator"]
+
+    def test_sprite_routing(self):
+        phase, hint = route("make a pixel art sprite of a glowing blue carp")
+        assert phase == "sprite"
+        assert hint["game"] == "stardew_valley"
+        assert hint["generators"] == ["sprite_generator"]
 
     def test_shop_keyword_routing(self):
         phase, hint = route("add a shop to my stardew valley game")

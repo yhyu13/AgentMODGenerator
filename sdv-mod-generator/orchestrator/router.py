@@ -60,7 +60,7 @@ _GAME_KEYWORDS: dict[str, list[str]] = {
 _PHASE_BY_KEYWORD: dict[str, dict[str, str]] = {
     "stardew_valley": {
         "texture": "texture",
-        "sprite": "texture",
+        "sprite": "sprite",
         "image": "texture",
         "shop": "shop_channel",
         "store": "shop_channel",
@@ -326,6 +326,8 @@ def _default_generators_for_phase(phase: str) -> list[str]:
         return ["general_author_generator"]
     if phase == "texture":
         return ["texture_generator"]
+    if phase == "sprite":
+        return ["sprite_generator"]
     if phase == "npc_schedule":
         return [
             "manifest_generator",
