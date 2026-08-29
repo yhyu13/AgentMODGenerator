@@ -16,20 +16,13 @@ class GeneratorOutput:
     assets: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
-    def add_file(self, path: str, content: dict | str) -> None:
+    def add_file(self, path: str, content: dict | list | str | bytes) -> None:
         """Add a file to the generator output.
 
-        ``content`` may be a dict (will be JSON-serialised in the
-        final zip) or a ``str`` (will be written as-is, encoded as
-        UTF-8). String content is used for plain-text files like
-        mail bodies (.txt) per Content Patcher convention
-        (STARDEW_VALLEY_MOD_STANDARDS.md §2.1).
-
-        v101: relaxed from ``dict`` to ``dict | str`` so generators
-        can emit plain-text mail files. The packager at
-        ``generators/packager.py`` checks ``isinstance(content, (dict,
-        list))`` for JSON-serialisation and treats ``str`` as a
-        plain-text body.
+        ``content`` may be a dict/list (JSON-serialised in the final zip),
+        a ``str`` (written as-is, UTF-8), or ``bytes`` (written raw — used
+        for generated PNGs and other binary assets). The packager at
+        ``generators/packager.py`` already handles all four types.
         """
         self.files[path] = content
 

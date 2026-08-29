@@ -16,6 +16,9 @@
 - **Soulbound Bloodhound** — 被提为下一参考；主要是自定义 NPC + C# DLL，超出纯 CP 边界。（边界期）
 - **BroadcastAPI 级商店** — 7 月 16 日的重写没提交；后来的工作让 10 个模板「能加载」，不是对齐电视购物「看→买→次日邮寄」回路。（差口岸期）
 - **Session 4 收尾** — 当时「LLM 模组进真机正确性检查」进行到一半，日志里已把该发现写成 Session 6 的触发点。（老师是错的期）
+- **sprite_generator 未接管道** — `sprite` phase 没注册进 `pack/__init__.py` 和 `router.py`，走不了完整 Route → Generate → Package；真机 load 是脚本直出 zip 验证的。（贴图生成期）
+- **真实生图 adapter 只接了 gpt-image（PNG）** — MiniMax `image-01` 返回 JPEG，`decode_png` 只认 PNG，未接入；接入需先做 JPEG 解码或格式转换。（贴图生成期）
+- **texture 生成器的旧字段未修** — `texture/__init__.py:79-90` 用 `SourceRect/ToRect` + `Format 1.29.0`（旧语法），生产包用 `FromArea/ToArea` + `Format 2.0.0`；按精准修改原则只在新 sprite 生成器用了正确字段，没回头改 texture。（贴图生成期）
 
 ---
 
@@ -113,6 +116,23 @@ ME 原话：`use ~\.kilo\skills\tech-design-to-zhihu\ update 知乎文章，and 
 
 ---
 
+## 多模态调研 + sprite 贴图生成（2026-08-29）
+
+ME 原话：`我们做那些原创性工作，让agent能像人一样创造mod？多模态搞定了吗` → `minimax生图你会吗` → `use .env` → `go`（software-dev-loop）。
+
+| ME | YOU |
+|---|---|
+| 问原创性工作 + 多模态是否搞定 | 盘点：原创在「数据层」（general_author + data_schemas 说明书 + T1 门 + 混合路由），多模态**零落地**——LLM 客户端纯文本（`llm/client.py:30-35`）、texture 生成器只画 16×16 纯色占位（`texture/__init__.py:10-25`）、全库无图像/音频库。 |
+| `minimax生图你会吗` | 查证 MiniMax 生图 API（context7）：`POST /v1/image_generation`、`image-01`、尺寸 [512,2048] 8 的倍数。指出硬约束：512 下限 vs 星露谷 16×16 像素画，中间必须靠后处理。 |
+| `both`（实验 + 范围判断文档） | 写 `doc/multimodal-sprite-scope.md`；无 MiniMax key 时用 `.env` 的 llm-proxy 代理调 `gpt-image-1.5` 实测：**直接生成失败**（29201 色、仅 1.1% 的 16×16 块纯色），但 downsample + 量化后鱼形保留。 |
+| `use .env` | 发现根 `.env` 有 `MINIMAX_API_KEY`。调 `api.minimaxi.com`（**不是** context7 文档的 `api.minimax.io`，后者返回 invalid api key）实测 `image-01`：23978 色、24.7% 纯色块、返回 **JPEG** 非 PNG。结论同 gpt——直接生成不行，后处理能救。 |
+| `go`（software-dev-loop） | 按 loop 走：plan doc（`doc/sprite-generator-plan.md`，自批判 5 处后改进）→ TDD 6 个 slice 实现 `sprite_utils`（downsample/quantize/encode_png/decode_png）+ `sprite_generator`。10 个新测试绿。 |
+| （隐含：量化好坏） | benchmark：真实生图 23182 色 → 量化后 **16 色**、前景格 34，verdict PASS。 |
+| （隐含：真机验收） | `generate_sprite_demo.py` 直出 zip → 真 SMAPI load：Sprite Mod 被加载为 content pack、CP 应用 EditImage 补丁、零警告。全量 **1233 passed, 12 skipped**。 |
+| （隐含：字段矛盾要钉死） | 用生产包 `TV Shopping Network`（`.reference_mods`）钉死 EditImage 字段：`FromArea/ToArea` + `PatchMode` + `Format 2.0.0` 是现代的，texture 生成器的 `SourceRect/ToRect` + `1.29.0` 是旧语法。新生成器用对的，旧生成器按精准修改原则不动。 |
+
+---
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（决定、纠正、砍掉）
@@ -137,6 +157,8 @@ ME 原话：`use ~\.kilo\skills\tech-design-to-zhihu\ update 知乎文章，and 
 4. **每道门要能拦住已落盘的坏包。** 修老师的同时加一道能「fail the three bugs」的检查，不是只改一个值（Session 6）。
 5. **量化「修完好了多少」。** 从 63.6% 到 100% 这种数字，比「修好了」更能拦住过拟合幻觉（Session 3）。
 6. **证伪比提交更有价值。** AI 报告「我自己教的是错的」，是这次项目里最有信息量的一步（Session 4）。
+7. **生图模型不会自发产出严格像素画，后处理是桥不是可选。** 两个模型实测（gpt 29201 色 / MiniMax 23978 色，都远非 8 色），但 downsample + 量化后形状保留——判断「换模型也一样」因此有双模型证据，不是猜。（贴图生成期）
+8. **「好不好」要一个数字，不是一张图。** benchmark 里 23182 色 → 16 色、前景格 34，比「看起来像像素画」更能拦住幻觉；真机 load 日志里「Patched game code → Sprite Mod」是最终裁判。（贴图生成期）
 
 ### 一句话总结
 
