@@ -16,7 +16,6 @@
 - **Soulbound Bloodhound** — 被提为下一参考；主要是自定义 NPC + C# DLL，超出纯 CP 边界。（边界期）
 - **BroadcastAPI 级商店** — 7 月 16 日的重写没提交；后来的工作让 10 个模板「能加载」，不是对齐电视购物「看→买→次日邮寄」回路。（差口岸期）
 - **Session 4 收尾** — 当时「LLM 模组进真机正确性检查」进行到一半，日志里已把该发现写成 Session 6 的触发点。（老师是错的期）
-- **真实生图 adapter 只接了 gpt-image（PNG）** — MiniMax `image-01` 返回 JPEG，`decode_png` 只认 PNG，未接入；接入需先做 JPEG 解码或格式转换。（贴图生成期）
 - **texture 生成器的旧字段未修** — `texture/__init__.py:79-90` 用 `SourceRect/ToRect` + `Format 1.29.0`（旧语法），生产包用 `FromArea/ToArea` + `Format 2.0.0`；按精准修改原则只在新 sprite 生成器用了正确字段，没回头改 texture。（贴图生成期）
 
 ---
@@ -141,6 +140,19 @@ ME 原话（贴回的 loop 完成报告末尾）：`要不要我下一步把 spr
 | 贴回上一轮 loop 完成报告（末尾问要不要注册 sprite phase） | 先核实真机状态，不信报告：`git show 52d48b2` 确认 sprite 生成器已提交但**未注册**——pack `supported_phases` 无 `sprite`，router 仍把 `sprite`→`texture`。 |
 | （隐含：注册，让它走完整管道） | 注册 sprite phase：pack `__init__.py` 加 import + `supported_phases` + `get_generators("sprite")`；router 把 `sprite`→`sprite` 并加 `_default_generators_for_phase` 臂。sprite 生成器自产 manifest.json，不挂共享 `manifest_generator`（同 weather_event/weapon_definition/tool_definition 形态）。 |
 | （隐含：不能撞到 texture 替换） | 路由决策：`sprite`→sprite（生图）、`texture`/`image`→texture（替换）。`test_texture_routing` 的 prompt 从 "replace the parsnip crop sprite" 改成 "replace the parsnip crop texture" 消除歧义；新增 `test_sprite_routing`；phase-isolation 加 sprite（`SPRITE_DETERMINISTIC=1` 单阶段产可加载 zip）。全量 **1251 passed, 12 skipped**，零破坏。 |
+
+---
+
+## MiniMax 生图 provider 接入（2026-08-29）
+
+ME 原话：`go push, finish enxt pahse`（go push, finish next phase）。
+
+| ME | YOU |
+|---|---|
+| `go push, finish next phase` | push 上一步 sprite phase 注册（`0fb6777`）；「next phase」从 KNOWLEDGE 下一步取：MiniMax JPEG 解码 + 生图 API 真实路径覆盖。 |
+| （隐含：两个 provider 都要能出图） | 加 `decode_image` 嗅探（PNG 签名 / `FF D8 FF`）→ `decode_png`（纯 stdlib）/ `decode_jpeg`（Pillow 懒加载）；`_generate_sprite_image` 按 `SPRITE_IMAGE_PROVIDER`（默认 `openai`）分发到 `_generate_openai_image` / `_generate_minimax_image`。 |
+| （隐含：不能为保「纯 stdlib」拒接 MiniMax） | 决策：JPEG 解码只能靠 Pillow（stdlib 无 JPEG 解码），Pillow 只懒加载给 JPEG 分支，确定性 PNG 路径仍零依赖；`pillow>=10.0.0` 入 requirements。 |
+| （隐含：请求形状要钉死） | 用官方文档 + 历史实测钉死 MiniMax 请求：`POST api.minimaxi.com/v1/image_generation`、`image-01`、512×512、`response_format=base64`，解析 `base_resp.status_code`（2049 = invalid api key）+ `data.image_base64[0]`。mocked aiohttp 测试覆盖请求形状 + 错误 status + provider 分发。全量 **1260 passed, 12 skipped**。 |
 
 ---
 

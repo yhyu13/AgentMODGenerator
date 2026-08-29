@@ -16,7 +16,7 @@ import structlog
 from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
 from generators.core.manifest import build_manifest_dict, slugify_unique_id
 from generators.packs.stardew_valley.sprite_utils import (
-    decode_png,
+    decode_image,
     downsample,
     encode_png,
     quantize,
@@ -39,17 +39,23 @@ def _deterministic_pixels() -> tuple[list[tuple[int, int, int]], int, int]:
     return pixels, size, size
 
 
-async def _generate_sprite_image(
+def _sprite_prompt(prompt: str) -> str:
+    """Shared pixel-art prompt for both image providers."""
+    return (
+        f"A 16x16 pixel art sprite of: {prompt}. Stardew Valley style, "
+        "flat solid colors, limited palette, hard pixel edges, no "
+        "anti-aliasing, centered on solid white background"
+    )
+
+
+async def _generate_openai_image(
     prompt: str,
 ) -> tuple[list[tuple[int, int, int]], int, int]:
-    """Call the image API and return (RGB pixels, width, height).
+    """gpt-image-1.5 via the OpenAI-compatible ``/images/generations`` endpoint.
 
-    Deterministic sample when ``SPRITE_DETERMINISTIC=1`` (tests / no-LLM
-    gate); otherwise gpt-image-1.5 via the OpenAI-compatible endpoint.
+    Returns PNG (``data[0].b64_json``); decoded through :func:`decode_image`
+    so a proxy that returns JPEG is handled identically.
     """
-    if os.environ.get("SPRITE_DETERMINISTIC") == "1":
-        return _deterministic_pixels()
-
     import aiohttp
 
     key = os.environ.get("OPENAI_API_KEY", "")
@@ -62,11 +68,7 @@ async def _generate_sprite_image(
     url = base.rstrip("/") + "/images/generations"
     payload = {
         "model": "gpt-image-1.5",
-        "prompt": (
-            f"A 16x16 pixel art sprite of: {prompt}. Stardew Valley style, "
-            "flat solid colors, limited palette, hard pixel edges, no "
-            "anti-aliasing, centered on solid white background"
-        ),
+        "prompt": _sprite_prompt(prompt),
         "size": "1024x1024",
         "response_format": "b64_json",
     }
@@ -82,7 +84,74 @@ async def _generate_sprite_image(
         raise RuntimeError(
             f"sprite image API returned no b64_json: {list(data['data'][0])}"
         )
-    return decode_png(base64.b64decode(b64))
+    return decode_image(base64.b64decode(b64))
+
+
+async def _generate_minimax_image(
+    prompt: str,
+) -> tuple[list[tuple[int, int, int]], int, int]:
+    """MiniMax image-01 via ``/v1/image_generation`` (returns JPEG base64).
+
+    The response wraps an application-level status in ``base_resp`` and the
+    images under ``data.image_base64`` (a list, one per ``n``). The domain is
+    ``api.minimaxi.com`` (not the docs' ``api.minimax.io``, which rejects the
+    key with status 2049).
+    """
+    import aiohttp
+
+    key = os.environ.get("MINIMAX_API_KEY", "")
+    base = os.environ.get("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
+    if not key:
+        raise RuntimeError(
+            "sprite minimax provider requires MINIMAX_API_KEY "
+            "(or set SPRITE_IMAGE_PROVIDER=openai)"
+        )
+    url = base.rstrip("/") + "/image_generation"
+    payload = {
+        "model": "image-01",
+        "prompt": _sprite_prompt(prompt),
+        "width": 512,
+        "height": 512,
+        "response_format": "base64",
+        "n": 1,
+        "prompt_optimizer": False,
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            url, json=payload, headers={"Authorization": f"Bearer {key}"}
+        ) as resp:
+            data = await resp.json()
+    base_resp = data.get("base_resp") or {}
+    code = base_resp.get("status_code")
+    if code not in (None, 0):
+        raise RuntimeError(
+            f"MiniMax image API error {code}: {base_resp.get('status_msg', 'unknown')}"
+        )
+    images = (data.get("data") or {}).get("image_base64") or []
+    if not images:
+        raise RuntimeError(
+            f"MiniMax image API returned no image_base64: "
+            f"{list((data.get('data') or {}).keys())}"
+        )
+    return decode_image(base64.b64decode(images[0]))
+
+
+async def _generate_sprite_image(
+    prompt: str,
+) -> tuple[list[tuple[int, int, int]], int, int]:
+    """Call the image API and return (RGB pixels, width, height).
+
+    Deterministic sample when ``SPRITE_DETERMINISTIC=1`` (tests / no-LLM
+    gate); otherwise dispatch on ``SPRITE_IMAGE_PROVIDER``: ``openai``
+    (default, gpt-image-1.5 → PNG) or ``minimax`` (image-01 → JPEG).
+    """
+    if os.environ.get("SPRITE_DETERMINISTIC") == "1":
+        return _deterministic_pixels()
+
+    provider = os.environ.get("SPRITE_IMAGE_PROVIDER", "openai").strip().lower()
+    if provider == "minimax":
+        return await _generate_minimax_image(prompt)
+    return await _generate_openai_image(prompt)
 
 
 class SpriteGenerator(BaseGenerator):

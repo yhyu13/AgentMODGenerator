@@ -1,9 +1,11 @@
 """Pixel-art post-processing for the sprite_generator plan.
 
 Turns a high-resolution generated image into a game-usable N×N pixel-art
-sprite, pure stdlib (no Pillow). The generator I/O (image API call) lives
-elsewhere; this module is the deterministic core that makes a real sprite
-out of whatever the model returns.
+sprite. The deterministic core (downsample/quantize/encode_png/decode_png)
+is pure stdlib; only ``decode_jpeg`` pulls in Pillow (lazily) because
+MiniMax image-01 returns JPEG where gpt-image returns PNG. The generator
+I/O (image API call) lives elsewhere; this module turns whatever the model
+returns into a real sprite.
 
 See doc/sprite-generator-plan.md for the full plan.
 """
@@ -209,3 +211,43 @@ def decode_png(png: bytes) -> tuple[list[tuple[int, int, int]], int, int]:
         for x in range(width)
     ]
     return pixels, width, height
+
+
+def decode_jpeg(jpeg: bytes) -> tuple[list[tuple[int, int, int]], int, int]:
+    """Decode a JPEG into (row-major RGB pixels, width, height) via Pillow.
+
+    MiniMax image-01 returns JPEG (``image_base64``), unlike gpt-image's
+    PNG. JPEG decode needs Pillow (the PNG path above is pure stdlib);
+    Pillow is imported lazily so the deterministic PNG path keeps working
+    without it installed.
+    """
+    import io
+
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - only when Pillow absent
+        raise RuntimeError(
+            "JPEG decode requires Pillow (pip install pillow); "
+            "MiniMax image-01 returns JPEG"
+        ) from exc
+
+    with Image.open(io.BytesIO(jpeg)) as img:
+        img = img.convert("RGB")
+        width, height = img.size
+        pixels = list(img.getdata())
+    return pixels, width, height
+
+
+def decode_image(data: bytes) -> tuple[list[tuple[int, int, int]], int, int]:
+    """Decode a PNG or JPEG byte string into (row-major RGB pixels, w, h).
+
+    Sniffs the magic bytes: PNG signature → :func:`decode_png` (pure
+    stdlib), JPEG SOI (``FF D8 FF``) → :func:`decode_jpeg` (Pillow).
+    Raises ValueError for anything else, so a provider that changes format
+    fails loudly instead of silently producing a corrupt sprite.
+    """
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return decode_png(data)
+    if data[:3] == b"\xff\xd8\xff":
+        return decode_jpeg(data)
+    raise ValueError(f"unsupported image format (magic bytes {data[:4]!r})")

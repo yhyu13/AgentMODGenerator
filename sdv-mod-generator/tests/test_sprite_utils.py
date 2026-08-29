@@ -8,7 +8,11 @@ downstream CP-shape wiring is covered by the real SMAPI load gate instead.
 """
 from __future__ import annotations
 
+import pytest
+
 from generators.packs.stardew_valley.sprite_utils import (
+    decode_image,
+    decode_jpeg,
     decode_png,
     downsample,
     encode_png,
@@ -169,3 +173,97 @@ class TestDecodePng:
             (0, 0, 255),
             (10, 20, 30),
         ]
+
+
+class TestDecodeJpeg:
+    """JPEG decode via Pillow (MiniMax image-01 returns JPEG, not PNG)."""
+
+    def test_decode_jpeg_roundtrip(self) -> None:
+        pytest.importorskip("PIL")
+        import io
+
+        from PIL import Image
+
+        img = Image.new("RGB", (8, 8), (200, 30, 30))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=95)
+
+        pixels, width, height = decode_jpeg(buf.getvalue())
+        assert (width, height) == (8, 8)
+        assert len(pixels) == 64
+        # JPEG is lossy; assert channel dominance, not exact values.
+        for r, g, b in pixels:
+            assert r > 150 and g < 100 and b < 100
+
+    def test_jpeg_magic_is_ffd8ff(self) -> None:
+        pytest.importorskip("PIL")
+        import io
+
+        from PIL import Image
+
+        img = Image.new("RGB", (4, 4), (1, 2, 3))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        assert buf.getvalue()[:3] == b"\xff\xd8\xff"
+
+
+class TestDecodeImage:
+    """Format sniffing: PNG → decode_png, JPEG → decode_jpeg, else ValueError."""
+
+    def test_sniffs_png(self) -> None:
+        png = encode_png([[(10, 20, 30, 255)]])
+        pixels, width, height = decode_image(png)
+        assert (width, height) == (1, 1)
+        assert pixels == [(10, 20, 30)]
+
+    def test_sniffs_jpeg(self) -> None:
+        pytest.importorskip("PIL")
+        import io
+
+        from PIL import Image
+
+        img = Image.new("RGB", (8, 8), (200, 0, 0))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=95)
+        pixels, width, height = decode_image(buf.getvalue())
+        assert (width, height) == (8, 8)
+        assert pixels[0][0] > 150 and pixels[0][1] < 100
+
+    def test_unknown_format_raises(self) -> None:
+        with pytest.raises(ValueError, match="unsupported image format"):
+            decode_image(b"\x00\x01\x02\x03not-an-image")
+
+
+class TestJpegPipeline:
+    """End-to-end JPEG path: decode → downsample → quantize yields a sprite.
+
+    This is the benchmark for the MiniMax adapter — before ``decode_image``
+    existed, a JPEG response hit ``decode_png`` and died on the PNG-signature
+    assert. Here a synthetic MiniMax-style JPEG (dark blob on white) must
+    survive decode + downsample + quantize with a non-trivial foreground.
+    """
+
+    def test_jpeg_decodes_into_valid_sprite(self) -> None:
+        pytest.importorskip("PIL")
+        import io
+
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGB", (64, 64), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse([16, 16, 48, 48], fill=(10, 20, 30))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+
+        pixels, width, height = decode_image(buf.getvalue())
+        assert (width, height) == (64, 64)
+
+        grid = downsample(pixels, width, height, target=16)
+        rgba_grid, palette = quantize(grid, palette=16)
+
+        opaque = [c for row in rgba_grid for c in row if c[3] == 255]
+        assert len(palette) <= 16
+        assert len(opaque) > 0, "foreground collapsed to background"
+        # The dark blob must survive JPEG lossiness — a couple of cells, not
+        # the whole grid, but never zero.
+        assert len(opaque) >= 4, f"foreground too small after JPEG: {len(opaque)}"

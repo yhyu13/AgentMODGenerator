@@ -10,7 +10,7 @@ import pytest
 
 from generators.core import GeneratorInput
 from generators.packs.stardew_valley.features.sprite import SpriteGenerator
-from generators.packs.stardew_valley.sprite_utils import decode_png
+from generators.packs.stardew_valley.sprite_utils import decode_png, encode_png
 
 
 def _inp(prompt: str = "a glowing blue carp fish") -> GeneratorInput:
@@ -85,3 +85,120 @@ class TestClearFailure:
         # conftest already unsets OPENAI_API_KEY, so no image provider.
         with pytest.raises(RuntimeError, match="image API key"):
             await SpriteGenerator().generate(_inp())
+
+
+class TestMiniMaxProvider:
+    """MiniMax image-01 branch: request shape + response parsing (mocked I/O)."""
+
+    @pytest.mark.asyncio
+    async def test_minimax_branch_parses_image_base64(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import base64
+
+        import aiohttp
+
+        import generators.packs.stardew_valley.features.sprite as sp
+
+        monkeypatch.setenv("MINIMAX_API_KEY", "test-minimax-key")
+
+        # A tiny valid PNG so decode_image sniffs the PNG path (pure stdlib,
+        # no Pillow needed in this test).
+        png = encode_png([[(1, 2, 3, 255)]])
+        b64 = base64.b64encode(png).decode()
+
+        captured: dict = {}
+
+        class _FakeResp:
+            async def json(self):
+                return {
+                    "base_resp": {"status_code": 0, "status_msg": "success"},
+                    "data": {"image_base64": [b64]},
+                    "id": "trace-123",
+                }
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            def post(self, url, json=None, headers=None):
+                captured["url"] = url
+                captured["json"] = json
+                captured["headers"] = headers
+                return _FakeResp()
+
+        monkeypatch.setattr(aiohttp, "ClientSession", _FakeSession)
+
+        pixels, width, height = await sp._generate_minimax_image("a fish")
+
+        assert (width, height) == (1, 1)
+        assert pixels == [(1, 2, 3)]
+        assert captured["url"] == "https://api.minimaxi.com/v1/image_generation"
+        assert captured["json"]["model"] == "image-01"
+        assert captured["json"]["width"] == 512
+        assert captured["json"]["height"] == 512
+        assert captured["json"]["response_format"] == "base64"
+        assert captured["json"]["prompt_optimizer"] is False
+        assert captured["headers"]["Authorization"] == "Bearer test-minimax-key"
+
+    @pytest.mark.asyncio
+    async def test_minimax_error_status_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import aiohttp
+
+        import generators.packs.stardew_valley.features.sprite as sp
+
+        monkeypatch.setenv("MINIMAX_API_KEY", "k")
+
+        class _FakeResp:
+            async def json(self):
+                return {
+                    "base_resp": {"status_code": 2049, "status_msg": "invalid api key"}
+                }
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            def post(self, *a, **kw):
+                return _FakeResp()
+
+        monkeypatch.setattr(aiohttp, "ClientSession", _FakeSession)
+        with pytest.raises(RuntimeError, match="2049"):
+            await sp._generate_minimax_image("a fish")
+
+    @pytest.mark.asyncio
+    async def test_provider_dispatch_minimax(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import generators.packs.stardew_valley.features.sprite as sp
+
+        monkeypatch.delenv("SPRITE_DETERMINISTIC", raising=False)
+        monkeypatch.setenv("SPRITE_IMAGE_PROVIDER", "minimax")
+
+        async def _fake_minimax(prompt):
+            return [(9, 9, 9)], 1, 1
+
+        monkeypatch.setattr(sp, "_generate_minimax_image", _fake_minimax)
+        pixels, w, h = await sp._generate_sprite_image("a fish")
+        assert (w, h) == (1, 1)
+        assert pixels == [(9, 9, 9)]
