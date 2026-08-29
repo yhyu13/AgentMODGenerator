@@ -4,7 +4,7 @@
 
 ## 结论
 
-**贴图生成能拆成两半：像素画的「内容」可以用生图模型补，「CP 形状」必须代码写死。当前多模态零落地；已实测（gpt-image-1.5 经 llm-proxy 代理）：生图模型不能直接出对齐 16×16 网格的 sprite（生成图 29201 色、仅 1.1% 的 16×16 块纯色），但 downsample 到 16×16 + 量化后鱼形轮廓清晰保留——后处理能救，这条路通。**
+**贴图生成能拆成两半：像素画的「内容」可以用生图模型补，「CP 形状」必须代码写死。当前多模态零落地；两个生图模型实测（gpt-image-1.5 与 MiniMax image-01）结论一致：都不能直接出对齐 16×16 网格的 sprite（约 2.4 万色、纯色块仅 1–25%），但 downsample 到 16×16 + 量化后鱼形轮廓都清晰保留——后处理能救，这条路通。**
 
 一句话：生图模型负责"画什么"，代码负责"画完贴到哪"。两半之间还要一道后处理（大图 → 16×16 像素画），这道后处理是代码，不是 prompt。
 
@@ -61,28 +61,30 @@
 
 ## 四、已实测结论：直接生成不可行，后处理可行
 
-用 `.env` 的 `OPENAI_API_KEY` + `OPENAI_BASE_URL=https://llm-proxy.tapsvc.com/v1` 代理，调 `gpt-image-1.5`（代理暴露的生图模型）实测。prompt 写死 "16x16 pixel art sprite, limited 8-color palette, no anti-aliasing"。
+两个生图模型实测，prompt 都写死 "16x16 pixel art sprite, limited 8-color palette, no anti-aliasing"，程序化分析（纯 stdlib，脚本 `sdv-mod-generator/scripts/analyze_png.py`）：
 
-**直接生成 = 失败。** 生成 1024×1024 PNG，程序化分析（纯 stdlib，脚本 `sdv-mod-generator/scripts/analyze_png.py`）结果：
+| 模型 | 接入方式 | 返回格式 | `unique_colors` | `flat_16x16_blocks` |
+|---|---|---|---|---|
+| gpt-image-1.5 | `llm-proxy.tapsvc.com` 代理，OpenAI 兼容端点 | PNG (b64_json) | 29201 | 46/4096 (1.1%) |
+| MiniMax image-01 | `api.minimaxi.com` 直连 | **JPEG** (image_base64) | 23978 | 1013/4096 (24.7%) |
 
-- `unique_colors=29201` —— 要的是 ≤8 色，实际 29201 种，差三个数量级。
-- `flat_16x16_blocks=46/4096 (1.1%)` —— 只有 1.1% 的 16×16 块纯色，**没有网格对齐**。
-- 背景不是纯色：四角 RGB 各不相同（249/251/252 抖动），top 色全是近白微差。
+**直接生成 = 失败（两个模型一致）。** 要的是 ≤8 色，实际都约 2.4 万色，差三个数量级。纯色 16×16 块最多 24.7%（MiniMax 略好，背景 30% 纯白；gpt 背景无纯色，四角 RGB 抖动）。两者都把 "16x16 pixel art" 理解成"高分辨率像素风插画"，不是"严格 16×16 sprite"。直接生成这条路**证伪**，且与模型无关。
 
-结论：生图模型把 "16x16 pixel art" 理解成"高分辨率像素风插画"，不是"严格 16×16 sprite"。直接生成这条路**证伪**。
-
-**后处理 = 能救。** 同一张图 downsample 到 16×16、量化到 8 色（脚本 `sdv-mod-generator/scripts/downsample_png.py`），鱼形轮廓清晰保留：
+**后处理 = 能救（两个模型都成立）。** 同一张图 downsample 到 16×16、量化到 8 色（脚本 `sdv-mod-generator/scripts/downsample_png.py`），鱼形轮廓都清晰保留：
 
 ```
-0000000000000000
-0000077777000000
-0000775555750000
-0000557777570000
-0000755555750000
-0000077700000000   ← 中间胖、两端尖，可辨认的鱼形
+gpt-image-1.5  (32 格前景)        MiniMax image-01 (90 格前景)
+0000000000000000                   0000000000000000
+0000077777000000                   0000007770000000
+0000775555750000                   0007777577777770
+0000557777570000                   0077777777777770
+0000755555750000                   0777777777755700
+0000077700000000   ← 中间胖两端尖   0777777777755700
+                                   0077777777777770
+                                   0000077770000000  ← 鱼形更饱满
 ```
 
-downsample 后 36 色 → 量化到 8 色后形状仍在。所以路是通的：**生图出高分辨率内容 → 程序化 downsample + 量化 + 网格对齐 → 16×16 sprite**。
+downsample 后 gpt 36 色 / MiniMax 118 色 → 量化到 8 色后形状都在。所以路是通的：**生图出高分辨率内容 → 程序化 downsample + 量化 + 网格对齐 → 16×16 sprite**。
 
 退路仍成立：若对某类贴图（如需要精确调色板对齐原版 tilesheet）生图内容不够稳，用纯程序化 palette 生成兜底（现有 `_make_png` 已证明程序化能对齐）。
 
@@ -108,7 +110,12 @@ downsample 后 36 色 → 量化到 8 色后形状仍在。所以路是通的：
 
 三个数字全部指向同一结论：**不直接生成，走后处理。**
 
-**注意代理模型差异**：本次用 `gpt-image-1.5`（代理里没有 MiniMax 的 `image-01`，只有 `minimax/minimax-h3` 文本模型）。MiniMax `image-01` 直接调是 `POST https://api.minimax.io/v1/image_generation`（见前文 curl），未实测；但「生图模型不会自发产出严格 16×16 sprite」这个判断对任何通用生图模型性质相同，换模型大概率还是 29201 色量级 + 无网格。
+**两个模型都实测过了**：
+
+- `gpt-image-1.5`（`llm-proxy.tapsvc.com` 代理）→ 返回 PNG b64_json。
+- MiniMax `image-01`（`api.minimaxi.com` 直连）→ 返回 **JPEG** base64（`image_base64`）。分析脚本只认 PNG，需先转格式（Windows 可用 System.Drawing，或给分析脚本加 JPEG 头检测）。
+
+**域名坑**：MiniMax 文档写的是 `api.minimax.io`，但该 key 实测返回 `invalid api key`（status 2049）；正确域名是 `api.minimaxi.com`（返回 `base_resp.status_code=0`）。
 
 ---
 
