@@ -18,6 +18,10 @@
 - **sprite phase 已接入管道**：`route("make a pixel art sprite...")` → phase `"sprite"`、generators `["sprite_generator"]`；phase-isolation 测试以 `SPRITE_DETERMINISTIC=1` 覆盖 sprite 单阶段产可加载 zip（静态 SMAPI 校验过）。
 - **MiniMax provider 已接入**：`SPRITE_IMAGE_PROVIDER=minimax` + `MINIMAX_API_KEY` → `POST api.minimaxi.com/v1/image_generation`（`image-01`、512×512、`response_format=base64`、`n=1`、`prompt_optimizer=False`），解析 `base_resp.status_code` + `data.image_base64[0]`，JPEG 经 `decode_image` 解码。mocked aiohttp 测试覆盖请求形状 + 错误 status 2049 + provider 分发。
 - **EditImage 字段权威锚点**：生产包 `.reference_mods/TV Shopping Network/content.json:820-854` 用 `FromArea`/`ToArea` + `PatchMode` + `Format 2.0.0`。
+- **sprite phase 已完成完整管道集成（2026-08-30）**：`test_full_pipeline_sprite` 用 `SPRITE_DETERMINISTIC=1` 跑完整 Route→Generate→T1→T2→Package 图，断言 status done + zip_key + sprite_generator in outputs + t1_passed。T1 门新增 `sprite_generator` 臂（manifest 必填字段 Format/UniqueID/Name/Version/ContentPackFor + content.json Changes 非空），坏 manifest 被拦（红）、正常 sprite 过门（绿）。全量 1268 passed, 12 skipped（skip 全是 Windows 无 bash 的脚本测试）。
+- **MiniMax 真实 API 已跑通（非 mock）**：`_generate_minimax_image("a glowing blue carp fish")` 直连 `api.minimaxi.com/v1/image_generation` → 512×512 JPEG、23171 色 → downsample+quantize → 16 色、前景格 53、verdict PASS。此前只靠 mocked aiohttp 钉死请求形状，现已用真 key 验证。
+- **sprite 配置已文档化 + 测试隔离**：`.env.example` + `prod.env.example` 记录 `SPRITE_IMAGE_PROVIDER`/`MINIMAX_API_KEY`/`MINIMAX_BASE_URL`/`SPRITE_DETERMINISTIC`；`conftest._isolate_test_env` 隔离这四变量（AGENTS.md「新 env var → 加进 fixture」约定）。生成器读 os.environ 直接（同 `GENERAL_AUTHOR_DETERMINISTIC` 惯例），不走 `Config` dataclass。
+- **真实 sprite demo（2026-08-30）**：auto-detect 生效（未设 `SPRITE_IMAGE_PROVIDER`，靠根 `.env` 的 `MINIMAX_API_KEY` 路由到 minimax），3 个 prompt 各生成一张 16×16 sprite + 打包成合法 CP zip（SMAPI 静态校验 0 错误）。色板证实对题：fish=全蓝青（#74c4e0 系，47 前景格）、ruby=全红（#a81e39 系，60 前景格）、sword=全金（#f6e6b6 系，22 前景格）。产出在 `mods/sprite_demo/sprite_*.png`（16×16 + `_256.png` 放大版）和 `D:\tmp\sdv-mod-generator\outputs\mods\sprite_demo_*\*.zip`。
 
 ## Gotcha（错误签名 → 修复）
 
@@ -25,8 +29,10 @@
 - **MiniMax 返回 JPEG**（`image_base64`，`FF D8 FF E0`）非 PNG → 已由 `decode_image` 嗅探修复：JPEG magic 走 `decode_jpeg`（Pillow 懒加载），不再撞 `decode_png` 的 PNG 签名断言。
 - **`GeneratorOutput.add_file` 原本标注 `dict | str`** → 放 PNG bytes 需放宽到 `dict | list | str | bytes`（packager 已支持 bytes，只改注解）。
 - **texture 生成器旧语法**：`texture/__init__.py:79-90` 的 `SourceRect/ToRect` + `@/Maps/springobjects` 前缀是旧 CP 语法，现代用 `FromArea/ToArea` + 无 `@` 前缀。
+- **默认 `openai` sprite provider 潜藏失效 → 已修（auto-detect）**（critic 发现）：`SPRITE_IMAGE_PROVIDER` 原先默认 `openai` → `_generate_openai_image` 用 `OPENAI_BASE_URL` + `/images/generations` + `gpt-image-1.5`，但 `OPENAI_BASE_URL` 默认（config.py:71）和 `.env` 都指向 `api.minimaxi.com/v1`（MiniMax chat 端点，只服务 M2.7，不服务 gpt-image）。**修复**：`_generate_sprite_image` 在 `SPRITE_IMAGE_PROVIDER` 未设时 auto-detect——`OPENAI_BASE_URL` 含 `minimax` 或 `MINIMAX_API_KEY` 存在 → `minimax`，否则 `openai`；显式 `SPRITE_IMAGE_PROVIDER` 仍强制覆盖。`.env.example`/`prod.env.example` 默认写成 `minimax` 并加约束说明。conftest 加隔离 `OPENAI_BASE_URL`。测试：`TestProviderAutoDetect` 4 例（minimax base URL / minimax key / openai base URL / 显式覆盖）。
+- **full-pipeline 测试的 load_dotenv 顺序 flake**（critic 纠正）：`run_pipeline` 懒 import `app.config`（pipeline.py:404），`load_dotenv(override=True)` 只在 `app.config` 首次 import 时跑一次。若首次 import 发生在 full-pipeline 测试 body 内（conftest 已 delenv `OPENAI_API_KEY` 之后），`config/.env` 的 key 会被重新注入，T2 门就发真实 LLM 调用而非「No LLM provider」回退（慢/挂起）。本 host 上 `app.config` 在 collection 期已被别的模块 import，所以 T2 跳过、全套 24s 跑完；换一台 `config/.env` 带 key 的机器会中招。预先存在（3 个既有 full-pipeline 测试同享），修法（把 `app.config` 挪进 conftest 预 import、或 full-pipeline 测试 mock T2）属共享基建改动，未在 sprite 收尾里做。
 
 ## 下一步
 
 - texture 生成器旧字段修复（`SourceRect/ToRect` → `FromArea/ToArea`，`1.29.0` → `2.0.0`）——单独一个 PR，不混入 sprite 工作。
-- MiniMax 真实（非 mock）API 调用尚未真机跑过一次（需 `MINIMAX_API_KEY` + 网络 + 成本）；当前请求形状按官方文档 + 历史实测钉死，靠 mocked aiohttp 覆盖。
+- MiniMax provider 与真实 API 已跑通（2026-08-30，见「事实」）；剩余未验证的是「真实 MiniMax 生图出的 sprite 进真机 SMAPI load」——目前真实调用只验到 benchmark 层（16 色/53 前景格），未把真图打进 zip 再 SMAPI load（demo zip 用的是确定性样本）。真机 load 真图是下一个可选验证。

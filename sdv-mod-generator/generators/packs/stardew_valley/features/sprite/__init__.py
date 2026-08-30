@@ -43,8 +43,9 @@ def _sprite_prompt(prompt: str) -> str:
     """Shared pixel-art prompt for both image providers."""
     return (
         f"A 16x16 pixel art sprite of: {prompt}. Stardew Valley style, "
-        "flat solid colors, limited palette, hard pixel edges, no "
-        "anti-aliasing, centered on solid white background"
+        "flat solid colors, vivid saturated colors, high contrast, "
+        "limited palette, hard pixel edges, no anti-aliasing, centered "
+        "on solid white background"
     )
 
 
@@ -143,12 +144,23 @@ async def _generate_sprite_image(
 
     Deterministic sample when ``SPRITE_DETERMINISTIC=1`` (tests / no-LLM
     gate); otherwise dispatch on ``SPRITE_IMAGE_PROVIDER``: ``openai``
-    (default, gpt-image-1.5 → PNG) or ``minimax`` (image-01 → JPEG).
+    (gpt-image-1.5 → PNG) or ``minimax`` (image-01 → JPEG). When
+    ``SPRITE_IMAGE_PROVIDER`` is unset, auto-detect the provider from the
+    configured backend: a MiniMax ``OPENAI_BASE_URL`` (or a present
+    ``MINIMAX_API_KEY``) selects ``minimax`` — MiniMax's OpenAI-compatible
+    endpoint serves chat (M2.7), not gpt-image-1.5, so the ``openai``
+    image path would fail there.
     """
     if os.environ.get("SPRITE_DETERMINISTIC") == "1":
         return _deterministic_pixels()
 
-    provider = os.environ.get("SPRITE_IMAGE_PROVIDER", "openai").strip().lower()
+    provider = os.environ.get("SPRITE_IMAGE_PROVIDER", "").strip().lower()
+    if not provider:
+        base_url = os.environ.get("OPENAI_BASE_URL", "").lower()
+        if "minimax" in base_url or os.environ.get("MINIMAX_API_KEY", "").strip():
+            provider = "minimax"
+        else:
+            provider = "openai"
     if provider == "minimax":
         return await _generate_minimax_image(prompt)
     return await _generate_openai_image(prompt)

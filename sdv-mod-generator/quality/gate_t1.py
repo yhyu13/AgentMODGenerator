@@ -405,6 +405,39 @@ def _gen_specific_validation(gen_name: str, output: GeneratorOutput) -> list[str
                         for e in _validate_general_author_change(action)
                     )
 
+    elif gen_name == "sprite_generator":
+        # The sprite generator is self-contained: it emits its own
+        # manifest.json + content.json + Assets/sprite.png (same shape as
+        # weather_event / weapon_definition / tool_definition). It cannot
+        # ride the ``manifest_generator`` arm — that fires only when a
+        # shared manifest_generator ran — so it needs its own manifest
+        # required-field check plus a content.json Changes check.
+        manifest = output.files.get("manifest.json")
+        if not isinstance(manifest, dict):
+            errors.append(
+                "sprite_generator: manifest.json is not a JSON object "
+                f"(got {type(manifest).__name__})"
+            )
+        else:
+            required = ["Format", "UniqueID", "Name", "Version", "ContentPackFor"]
+            for field_name in required:
+                if field_name not in manifest:
+                    errors.append(f"sprite_generator: missing required field '{field_name}'")
+            cpf = manifest.get("ContentPackFor")
+            if isinstance(cpf, dict) and "UniqueID" not in cpf:
+                errors.append("sprite_generator: ContentPackFor.UniqueID missing")
+        content = output.files.get("content.json")
+        if not isinstance(content, dict):
+            errors.append("sprite_generator: content.json missing or not an object")
+        elif not isinstance(content.get("Changes"), list) or not content["Changes"]:
+            errors.append("sprite_generator: content.json object root missing 'Changes' array")
+        else:
+            for i, change in enumerate(content["Changes"]):
+                if not isinstance(change, dict):
+                    errors.append(f"sprite_generator: content.json Changes[{i}] is not an object")
+                elif "Action" not in change:
+                    errors.append(f"sprite_generator: content.json Changes[{i}] missing 'Action' field")
+
     return errors
 
 

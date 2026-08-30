@@ -47,6 +47,21 @@ def _isolate_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
         # test so the conftest addition is purely a safety net
         # (the in-test delenv is the primary defense).
         "API_OWNER_USER_ID",
+        # Sprite image generation (sprite_generator reads these directly
+        # from os.environ): MiniMax provider key/base and the provider
+        # dispatch + deterministic toggles. Isolated so a developer with
+        # a real MINIMAX_API_KEY in their shell env (or a loaded config/.env)
+        # can't flip the sprite tests into live-network mode.
+        "MINIMAX_API_KEY",
+        "MINIMAX_BASE_URL",
+        "SPRITE_IMAGE_PROVIDER",
+        "SPRITE_DETERMINISTIC",
+        # v-sprite — the sprite provider auto-detect reads OPENAI_BASE_URL
+        # (a MiniMax base URL selects the minimax provider), and llm/client
+        # reads it too. Isolate it so a dev shell that exports a MiniMax
+        # OPENAI_BASE_URL can't flip the auto-detect into the minimax
+        # branch during tests.
+        "OPENAI_BASE_URL",
         "ALL_PROXY",
         "all_proxy",
     ):

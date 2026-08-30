@@ -156,6 +156,20 @@ ME 原话：`go push, finish enxt pahse`（go push, finish next phase）。
 
 ---
 
+## sprite 收尾：完整管道集成 + 真实 MiniMax 验证（2026-08-30）
+
+ME 原话：`finish the image gen sprite feature, perfectly integrate into mode gen`（software-dev-loop）。
+
+| ME | YOU |
+|---|---|
+| `finish ... perfectly integrate into mode gen` | 先核实状态而非信报告：sprite 生成器已提交（`52d48b2`/`0fb6777`/`319fd43`），但 KNOWLEDGE「下一步」仍挂着「MiniMax 真实 API 未跑」「texture 旧字段未修」。判读 scope = 收尾 sprite（不回改 texture——那是单独 PR）。 |
+| （隐含：写 plan 先于代码） | 写 `doc/sprite-integration-plan.md`，逐条 source-anchored 五个缺口：完整管道无 sprite 测试、T1 门无 sprite 臂、配置未文档化、conftest 未隔离 sprite 变量、MiniMax 真实 API 未跑。发一个 fresh-context critic 子代理审 plan。 |
+| （隐含：实现） | 补四块：① T1 门 `sprite_generator` 臂（manifest 必填字段 + content.json Changes 非空，红绿两测）；② `test_full_pipeline_sprite`（`SPRITE_DETERMINISTIC=1` 跑完整 Route→Generate→T1→T2→Package）；③ conftest 隔离 `MINIMAX_API_KEY`/`MINIMAX_BASE_URL`/`SPRITE_IMAGE_PROVIDER`/`SPRITE_DETERMINISTIC`；④ `.env.example` + `prod.env.example` 文档化这四个变量。 |
+| （隐含：真实验证，不信 mock） | 装 Pillow（requirements 已声明，本地 env 缺），写一次性脚本加载根 `.env` 真 key，调 `_generate_minimax_image("a glowing blue carp fish")` → **512×512、23171 色 → downsample+quantize → 16 色、前景格 53、PASS**。跑完即删脚本，不打印 key。全量 **1268 passed, 12 skipped**（skip 全是 Windows 无 bash 的脚本测试）。 |
+| （隐含：发现 config 层不认根 .env） | `app/config.py` 只 load `config/.env`（`sdv-mod-generator/config/.env`），不 load 仓库根 `.env`——所以真 key 只在根 `.env`、线上管道（走 `config/.env`）里 MiniMax provider 永远无 key。这是「配置未文档化」缺口的根因，已用 `.env.example`/`prod.env.example` 文档化收口。 |
+
+---
+
 ## 这个项目如何教 vibe coding with AI
 
 ### 人的工作（决定、纠正、砍掉）

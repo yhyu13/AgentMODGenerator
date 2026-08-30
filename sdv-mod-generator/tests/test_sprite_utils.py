@@ -91,6 +91,23 @@ class TestQuantize:
         assert result_grid[0][0][3] == 255
         assert result_grid[0][1][3] == 255
 
+    def test_hue_bucketing_keeps_distinct_hues_separate(self) -> None:
+        # Green (0,250,0) and a brownish-olive (120,90,30) have near-equal
+        # luminance (146.75 vs 158.4) but different hue. Luminance-only
+        # bucketing would sort them adjacent and merge them into a mud,
+        # losing the green. Hue-aware bucketing puts the two orange-family
+        # colors together and keeps green in its own bucket.
+        grid = [
+            [(255, 255, 255), (255, 140, 0)],
+            [(0, 250, 0), (120, 90, 30)],
+        ]
+        result_grid, _palette = quantize(grid, palette=3)
+        opaque = {c for row in result_grid for c in row if c[3] == 255}
+        # Green survives as a distinct opaque color.
+        assert (0, 250, 0, 255) in opaque
+        # Exactly two opaque colors: green + the merged orange family.
+        assert len(opaque) == 2
+
 
 class TestPipeline:
     """End-to-end: downsample then quantize preserves foreground shape."""

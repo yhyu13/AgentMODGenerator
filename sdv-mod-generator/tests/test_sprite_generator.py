@@ -202,3 +202,84 @@ class TestMiniMaxProvider:
         pixels, w, h = await sp._generate_sprite_image("a fish")
         assert (w, h) == (1, 1)
         assert pixels == [(9, 9, 9)]
+
+
+class TestProviderAutoDetect:
+    """SPRITE_IMAGE_PROVIDER unset → provider inferred from the backend.
+
+    MiniMax's OpenAI-compatible endpoint serves chat (M2.7), not
+    gpt-image-1.5, so a MiniMax base URL (or a present MINIMAX_API_KEY)
+    must route to the minimax provider instead of the broken openai path.
+    """
+
+    @pytest.mark.asyncio
+    async def test_minimax_base_url_selects_minimax(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import generators.packs.stardew_valley.features.sprite as sp
+
+        monkeypatch.delenv("SPRITE_DETERMINISTIC", raising=False)
+        monkeypatch.delenv("SPRITE_IMAGE_PROVIDER", raising=False)
+        monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://api.minimaxi.com/v1")
+
+        async def _fake_minimax(prompt):
+            return [(1, 2, 3)], 1, 1
+
+        monkeypatch.setattr(sp, "_generate_minimax_image", _fake_minimax)
+        pixels, w, h = await sp._generate_sprite_image("a fish")
+        assert (w, h) == (1, 1)
+        assert pixels == [(1, 2, 3)]
+
+    @pytest.mark.asyncio
+    async def test_minimax_key_selects_minimax(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import generators.packs.stardew_valley.features.sprite as sp
+
+        monkeypatch.delenv("SPRITE_DETERMINISTIC", raising=False)
+        monkeypatch.delenv("SPRITE_IMAGE_PROVIDER", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+        monkeypatch.setenv("MINIMAX_API_KEY", "k")
+
+        async def _fake_minimax(prompt):
+            return [(4, 5, 6)], 1, 1
+
+        monkeypatch.setattr(sp, "_generate_minimax_image", _fake_minimax)
+        pixels, w, h = await sp._generate_sprite_image("a fish")
+        assert pixels == [(4, 5, 6)]
+
+    @pytest.mark.asyncio
+    async def test_openai_base_url_selects_openai(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import generators.packs.stardew_valley.features.sprite as sp
+
+        monkeypatch.delenv("SPRITE_DETERMINISTIC", raising=False)
+        monkeypatch.delenv("SPRITE_IMAGE_PROVIDER", raising=False)
+        monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+        async def _fake_openai(prompt):
+            return [(7, 8, 9)], 1, 1
+
+        monkeypatch.setattr(sp, "_generate_openai_image", _fake_openai)
+        pixels, w, h = await sp._generate_sprite_image("a fish")
+        assert pixels == [(7, 8, 9)]
+
+    @pytest.mark.asyncio
+    async def test_explicit_provider_overrides_auto_detect(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import generators.packs.stardew_valley.features.sprite as sp
+
+        monkeypatch.delenv("SPRITE_DETERMINISTIC", raising=False)
+        monkeypatch.setenv("SPRITE_IMAGE_PROVIDER", "openai")
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://api.minimaxi.com/v1")
+
+        async def _fake_openai(prompt):
+            return [(0, 0, 0)], 1, 1
+
+        monkeypatch.setattr(sp, "_generate_openai_image", _fake_openai)
+        pixels, w, h = await sp._generate_sprite_image("a fish")
+        assert pixels == [(0, 0, 0)]

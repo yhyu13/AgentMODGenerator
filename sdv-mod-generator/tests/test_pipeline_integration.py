@@ -139,8 +139,58 @@ class TestNodeT1Gate:
         assert result.t1_passed is True
         assert result.status != "failed"
 
+    def test_t1_gate_passes_valid_sprite_output(self):
+        """The sprite arm accepts the self-contained sprite output shape."""
+        from generators.core import GeneratorOutput
+        state = PipelineState(
+            request_id="req_test",
+            user_id="test_user",
+            prompt="sprite",
+            game="stardew_valley",
+            phase="sprite",
+        )
+        out = GeneratorOutput()
+        out.add_file("manifest.json", {
+            "Format": "2.0.0",
+            "UniqueID": "ai_generator.test_sprite",
+            "Name": "Sprite Mod",
+            "Version": "1.0.0",
+            "ContentPackFor": {"UniqueID": "Pathoschild.ContentPatcher"},
+        })
+        out.add_file("content.json", {
+            "Format": "2.0.0",
+            "Changes": [{"Action": "EditImage", "Target": "Maps/springobjects"}],
+        })
+        state.outputs = {"sprite_generator": out}
+        result = node_t1_gate(state)
+        assert result.t1_passed is True
+
+    def test_t1_gate_rejects_malformed_sprite_manifest(self):
+        """A sprite manifest missing required CP fields must fail the gate."""
+        from generators.core import GeneratorOutput
+        state = PipelineState(
+            request_id="req_test",
+            user_id="test_user",
+            prompt="sprite",
+            game="stardew_valley",
+            phase="sprite",
+        )
+        out = GeneratorOutput()
+        out.add_file("manifest.json", {"Format": "2.0.0", "Name": "no uid"})
+        out.add_file("content.json", {
+            "Format": "2.0.0",
+            "Changes": [{"Action": "EditImage", "Target": "Maps/springobjects"}],
+        })
+        state.outputs = {"sprite_generator": out}
+        result = node_t1_gate(state)
+        assert result.t1_passed is False
+        assert any("sprite_generator: missing required field" in e for e in result.errors), (
+            f"expected a sprite manifest required-field error, got: {result.errors}"
+        )
+
 
 class TestNodePackage:
+
     @pytest.mark.asyncio
     async def test_package_creates_zip_key(self):
         from generators.core import GeneratorOutput
@@ -323,4 +373,20 @@ class TestFullPipeline:
         assert "crafting_recipe_generator" in result.outputs
         assert "cooking_recipe_generator" in result.outputs
         assert "crafting_content_json_generator" in result.outputs
+        assert result.t1_passed is True
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline_sprite(self, monkeypatch):
+        # The sprite phase has no LLM fallback for image generation, so run
+        # the deterministic sample (same contract as the phase-isolation
+        # test) through the FULL Route -> Generate -> T1 -> T2 -> Package
+        # graph, proving the sprite phase survives every gate end-to-end.
+        monkeypatch.setenv("SPRITE_DETERMINISTIC", "1")
+        result = await run_pipeline(
+            "req_sprite_test", "test_user",
+            "make a pixel art sprite of a glowing blue carp",
+        )
+        assert result.status == "done"
+        assert result.zip_key is not None
+        assert "sprite_generator" in result.outputs
         assert result.t1_passed is True

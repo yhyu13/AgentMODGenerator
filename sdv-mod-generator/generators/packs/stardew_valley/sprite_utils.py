@@ -11,6 +11,7 @@ See doc/sprite-generator-plan.md for the full plan.
 """
 from __future__ import annotations
 
+import colorsys
 import zlib
 
 
@@ -54,6 +55,20 @@ def _luminance(c: tuple[int, int, int]) -> float:
     return 0.299 * r + 0.587 * g + 0.114 * b
 
 
+def _sort_key(c: tuple[int, int, int]) -> tuple[float, float, float]:
+    """Order colors for bucketing: chromatic by hue, near-gray by luminance.
+
+    Luminance-only ordering merges distinct hues that happen to share a
+    brightness (a dark orange folds into a brown). Sorting by hue first
+    keeps the color identity; the low-saturation guard keeps gray ramps
+    coherent, because hue is undefined for near-gray.
+    """
+    h, l, s = colorsys.rgb_to_hls(c[0] / 255.0, c[1] / 255.0, c[2] / 255.0)
+    if s < 0.15:
+        return (1.0, l, h)  # near-gray: by luminance
+    return (0.0, h, l)  # chromatic: by hue, then luminance
+
+
 def quantize(
     grid: list[list[tuple[int, int, int]]],
     palette: int = 16,
@@ -88,7 +103,7 @@ def quantize(
         for c in fg:
             mapping[c] = (c[0], c[1], c[2], 255)
     else:
-        fg_sorted = sorted(fg, key=_luminance)
+        fg_sorted = sorted(fg, key=_sort_key)
         n_buckets = max(palette - 1, 1)
         buckets: list[list[tuple[int, int, int]]] = [[] for _ in range(n_buckets)]
         for i, c in enumerate(fg_sorted):
