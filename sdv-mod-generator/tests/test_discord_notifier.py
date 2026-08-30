@@ -31,9 +31,7 @@ delete_notification_target) and one discord.Client method
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -195,6 +193,34 @@ class TestFireSuccess:
         assert isinstance(file_arg, discord.File)
         # The discord.File's filename attribute carries the zip_key.
         assert file_arg.filename == zip_key
+
+    @pytest.mark.asyncio
+    async def test_strips_path_from_zip_filename(
+        self,
+        notif: CompletionNotifier,
+        mock_bot: MagicMock,
+        mock_user: AsyncMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Production zip_key is a storage path ("mods/req_abc/req_abc.zip"),
+        # not a bare filename. The Discord attachment filename must be the
+        # basename only — a path with slashes is rejected/mangled by Discord.
+        zip_key = "mods/req_abc/req_abc.zip"
+        zip_path = tmp_path / zip_key
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_bytes(b"PK\x03\x04fake-zip-content")
+        monkeypatch.setattr(notifier_mod, "_LOCAL_OUTPUT_DIR", tmp_path)
+
+        mock_bot.fetch_user = AsyncMock(return_value=mock_user)
+        target = {"user_id": "12345", "channel_id": "67890"}
+
+        await notif._fire_success("req_abc", target, zip_key)
+
+        mock_user.send.assert_awaited_once()
+        call_args = mock_user.send.await_args
+        file_arg = call_args.kwargs.get("file") or call_args.args[1]
+        assert file_arg.filename == "req_abc.zip"
 
     @pytest.mark.asyncio
     async def test_sends_text_fallback_when_zip_missing(

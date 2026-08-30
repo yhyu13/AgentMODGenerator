@@ -428,7 +428,11 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
         record_pipeline_run,
         record_t2_score,
     )
-    from storage.queries import save_mod_output, update_mod_request_status
+    from storage.queries import (
+        create_mod_request,
+        save_mod_output,
+        update_mod_request_status,
+    )
     from storage.redis import set_pipeline_state
 
     try:
@@ -445,6 +449,25 @@ async def _run_pipeline_and_update_status(request_id: str, user_id: str, prompt:
             user_id=user_id,
         )
         raise
+
+    # Ensure the mod_requests row exists before save_mod_output inserts
+    # into mod_outputs (FK mod_outputs.request_id -> mod_requests.request_id).
+    # The API route creates this row up-front, but the Discord-bot path
+    # (run_pipeline_background from app/discord/bot.py) does NOT — the bot
+    # launches the pipeline directly, and save_mod_output then hit
+    # "insert or update on table mod_outputs violates foreign key constraint
+    # mod_outputs_request_id_fkey". create_mod_request is idempotent
+    # (ON CONFLICT DO NOTHING) so the API path's earlier insert is not
+    # clobbered; here it fills the gap for bot-originated requests, using
+    # the routed phase/generators now that routing has resolved.
+    await create_mod_request(
+        request_id,
+        user_id,
+        prompt,
+        result.phase or "p1_shop_channel",
+        result.generators or [],
+        result.hint or {},
+    )
 
     await redis_set_status(request_id, result.status)
     if result.zip_key:

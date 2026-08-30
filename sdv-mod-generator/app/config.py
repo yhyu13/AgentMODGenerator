@@ -82,6 +82,11 @@ class Config:
     aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     discord_bot_token: str = os.getenv("DISCORD_BOT_TOKEN", "")
     discord_app_id: str = os.getenv("DISCORD_APP_ID", "")
+    # Optional guild id to sync slash commands to during development.
+    # When set, the bot does an instant per-guild ``tree.sync(guild=...)``;
+    # when empty it falls back to a global sync (can take up to an hour to
+    # propagate). See ``_sync_command_tree`` in app/discord/bot.py.
+    discord_sync_guild_id: str = os.getenv("DISCORD_SYNC_GUILD_ID", "")
     api_key: str = os.getenv("API_KEY", "")
     api_owner_user_id: str = os.getenv("API_OWNER_USER_ID", "")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")

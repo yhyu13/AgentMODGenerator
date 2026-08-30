@@ -98,6 +98,19 @@ def test_case_insensitive() -> None:
     assert len(find_smapi_failures(log)) == 1
 
 
+def test_duplicate_mod_copies_is_failed() -> None:
+    log = (
+        "[10:00:05 TRACE SMAPI]    Add Legendary Golden Sword Weapon (from Mods\\AgentTest_gen_weapon, "
+        "ID: ai_generator.custom_weapondefinition) [content pack]...\n"
+        "[10:00:05 TRACE SMAPI]       Failed: you have multiple copies of this mod installed. "
+        "To fix this, delete these folders and reinstall the mod: Mods\\AgentTest_gen_weapon, "
+        "Mods\\Demo weapon_definition.\n"
+        "[10:00:05 ERROR SMAPI]    These mods could not be added to your game.\n"
+    )
+    failures = find_smapi_failures(log)
+    assert len(failures) >= 1
+
+
 def test_returns_all_offending_lines_in_order() -> None:
     log = (
         "line one: this mod failed\n"

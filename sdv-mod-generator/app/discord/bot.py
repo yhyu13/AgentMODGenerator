@@ -1,6 +1,7 @@
 """Discord bot client."""
 
 import asyncio
+import re
 import uuid
 import structlog
 import discord
@@ -36,10 +37,19 @@ def _extract_prompt_from_message(content: str) -> str | None:
     or too short to be a mod description (20-char heuristic avoids firing
     on casual chat).
 
+    Mentions are stripped before the command/empty checks. When a user
+    writes ``@Bot /status`` Discord delivers it as a plain message (not a
+    slash-command interaction) whose content is ``<@bot_id> /status`` —
+    without stripping the mention, the ``/``-prefix check misses and the
+    message passes the length gate as a bogus prompt, so the bot would
+    start generating a mod instead of reporting status.
+
     Extracted from the ``on_message`` handler so the intake rules are
     unit-testable without a live Discord gateway connection.
     """
     content = content.strip()
+    # Strip leading user/bot mentions (<@id> and nickname form <@!id>).
+    content = re.sub(r"^\s*(?:<@!?\d+>\s*)+", "", content).strip()
     if not content or content.startswith(("!", "/")):
         return None
     if content.lower() in ("hi", "hello", "hey", "你好", "嗨"):
@@ -47,6 +57,51 @@ def _extract_prompt_from_message(content: str) -> str | None:
     if len(content) < 20:
         return None
     return content
+
+
+async def _sync_command_tree(bot: commands.Bot, config) -> list:
+    """Sync the slash-command tree so commands appear in Discord.
+
+    Without a sync, the ``@_bot.tree.command(...)`` handlers registered
+    in ``start_bot`` exist only in-process — Discord never learns about
+    ``/generate``, ``/status``, etc., so nothing shows up in the server's
+    ``/`` picker.
+
+    Two modes, chosen by config:
+
+    * ``discord_sync_guild_id`` set → per-guild sync to that guild
+      (instant — the right choice for dev/testing).
+    * unset → global sync (propagates to all guilds but can take up to
+      an hour; use only for a stable, released command set).
+
+    Returns the list of synced commands (``app_commands.AppCommand``).
+    Raises on failure — the caller (``on_ready``) logs it so a bad sync
+    is visible rather than silently leaving commands unregistered.
+    """
+    guild_id = getattr(config, "discord_sync_guild_id", "") or ""
+    if guild_id:
+        guild = discord.Object(id=int(guild_id))
+        # The @_bot.tree.command(...) handlers are registered globally
+        # (no guild= arg). tree.sync(guild=...) only pushes commands
+        # registered FOR that guild, so a bare guild sync would upload
+        # zero commands (the command_count:0 bug). copy_global_to copies
+        # the global commands down into the guild scope first so the
+        # instant guild sync actually registers /generate /status etc.
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        logger.info(
+            "discord.bot.tree_synced",
+            guild_id=guild_id,
+            command_count=len(synced),
+        )
+    else:
+        synced = await bot.tree.sync()
+        logger.info(
+            "discord.bot.tree_synced",
+            scope="global",
+            command_count=len(synced),
+        )
+    return synced
 
 
 def _patch_http_for_proxy() -> None:
@@ -352,6 +407,10 @@ async def start_bot() -> None:
         _bot_ready.set()
         _notifier = CompletionNotifier(_bot)
         _notifier.start()
+        # Register the slash commands with Discord. Without this the
+        # @_bot.tree.command(...) handlers exist only in-process and
+        # nothing appears in the server's `/` command picker.
+        await _sync_command_tree(_bot, config)
 
     logger.info("discord.bot.starting", app_id=config.discord_app_id or "global")
     # No timeout: bot.start() is the long-lived connection. A 30s wait_for

@@ -1,12 +1,12 @@
 # SDV Mod Generator
 
-**一句话描述**：用户说一句话，AI 自动生成 Stardew Valley 模组 zip 包。
+**一句话描述**：用户说一句话，AI 自动生成 Stardew Valley 模组 zip 包，通过 Discord 直接交付。
 
 ---
 
 ## 产品目标
 
-Discord 用户发送模组需求（如「做一个购物频道」）→ AI 自动生成完整 Content Patcher 模组 → zip 交付。
+Discord 用户发送模组需求（如「做一个购物频道」）→ AI 自动生成完整 Content Patcher 模组 → zip 交付到用户 DM。
 
 最终形态：普通玩家不需要任何 mod 开发经验，只需描述你想要什么，就能得到一个可放入游戏 Mods 文件夹的模组包。
 
@@ -15,18 +15,18 @@ Discord 用户发送模组需求（如「做一个购物频道」）→ AI 自�
 ## 技术架构
 
 ```
-用户（Discord / Web / API）
+用户（Discord / API）
         ↓
-  FastAPI 接收请求
+  FastAPI 接收请求（非阻塞，返回 request_id）
         ↓
-  Router（知识库 Hint）
+  Router（关键词路由 → phase + generators）
         ↓
   Orchestrator（LangGraph 流水线）
-    Route → Generate → L1 Gate → L2 Gate → Package
+    Route → Generate → T1 Gate → T2 Gate（三法官）→ Package
         ↓
-  S3（zip 存储） + PostgreSQL（状态/历史）
+  本地磁盘 / S3（zip 存储）+ PostgreSQL（状态/历史）+ Redis（状态缓存）
         ↓
-  Discord 推送结果给用户
+  Discord Notifier 轮询 Redis，完成时 DM zip 给用户
 ```
 
 ---
@@ -35,68 +35,65 @@ Discord 用户发送模组需求（如「做一个购物频道」）→ AI 自�
 
 ```
 sdv-mod-generator/
-├── app/                   # FastAPI 应用层
-│   ├── main.py           # 入口：/health, /v1/mods/generate
-│   ├── api/routes.py     # API 路由（future）
-│   ├── discord/          # Discord bot + connector
-│   └── config.py          # 环境变量
+├── app/                     # FastAPI 应用层
+│   ├── main.py              # 入口 + lifespan（bot 在此启动）
+│   ├── config.py            # 环境变量（.env 加载 + 校验）
+│   ├── api/
+│   │   ├── routes.py        # /v1/mods/* 端点
+│   │   └── schemas.py       # Pydantic 模型
+│   └── discord/
+│       ├── bot.py           # gateway bot（slash 命令 + 自由聊天）
+│       ├── notifier.py      # 完成时 DM zip 的后台 watcher
+│       ├── webhook.py       # HTTP interactions + Ed25519 校验
+│       └── connector.py     # webhook → API 桥接
 │
-├── orchestrator/         # 核心编排层
-│   ├── router.py         # 意图路由（关键词 → generator 列表 + Hint）
-│   ├── pipeline.py       # LangGraph 主流水线
-│   ├── state.py          # PipelineState 数据结构
-│   └── nodes/            # 流水线节点
-│       ├── packager.py   # ZIP 打包 + S3 上传
-│       └── quality_gate.py  # L1/L2 质量门（future）
+├── orchestrator/            # 核心编排层
+│   ├── pipeline.py          # LangGraph 主流水线
+│   ├── state.py             # PipelineState 数据结构
+│   ├── router.py            # 意图路由（关键词 → phase + generators）
+│   └── feedback_router.py   # T2 反馈 → generator 路由
 │
-├── generators/           # 模组生成器
-│   ├── base.py          # Generator 基类
-│   ├── registry.py       # 注册表（加 generator 只改这里）
-│   ├── p0_texture.py     # P0：贴图替换
-│   ├── p1_shop_channel.py # P1：TV购物频道
-│   └── templates/        # JSON 模板片段
+├── generators/              # 模组生成器
+│   ├── core/base.py         # BaseGenerator / GeneratorOutput
+│   ├── core/manifest.py     # 共享 manifest.json 构建器
+│   ├── packager.py          # ZIP 打包
+│   └── packs/stardew_valley/
+│       └── features/        # 每 phase 一组生成器
+│           ├── shop_channel/    # TV 购物频道（11 生成器）
+│           ├── npc_schedule/    # NPC 日程 + 对话
+│           ├── event_mod/       # 节日事件
+│           ├── custom_crafting/ # 自定义配方
+│           ├── farm_expansion/  # 农场扩建
+│           ├── weather_event/   # 天气事件
+│           ├── achievements/    # 成就
+│           ├── weapon_definition/ # 自定义武器
+│           ├── tool_definition/   # 自定义工具
+│           ├── texture/         # 贴图替换
+│           ├── sprite/          # AI 像素画生成
+│           └── general_author/  # 通用 LLM CP 作者
 │
-├── knowledge/            # 模组开发知识库
-│   ├── sdv.py           # SDV 游戏系统映射
-│   ├── generators.py     # 功能 → generator 映射
-│   ├── cases/            # 模组案例拆解
-│   │   ├── 01-tv-shopping-network-case.md
-│   │   └── 02-todo.md
-│   └── data/
-│       ├── item_ids.json         # 物品/家具 ID 前缀速查
-│       ├── game_systems.json    # 游戏系统 API 摘要
-│       └── content_actions.json  # Content Patcher Action 类型
+├── quality/                 # 质量检验
+│   ├── gate_t1.py           # T1：确定性 Schema + 游戏数据校验
+│   └── gate_t2.py           # T2：三法官 LLM 评审
 │
-├── quality/              # 质量检验
-│   ├── gate_l1.py       # L1：确定性 Schema 校验
-│   └── gate_l2.py       # L2：LLM-as-Judge 二审
+├── storage/                 # 存储层
+│   ├── postgres.py          # PostgreSQL（async SQLAlchemy）
+│   ├── redis.py             # Redis 状态缓存 + 通知目标
+│   ├── s3.py                # S3 / 本地文件回退
+│   ├── queries.py           # DB 查询
+│   └── models/              # SQLAlchemy 模型
 │
-├── storage/              # 存储层
-│   ├── postgres.py      # PostgreSQL 连接
-│   ├── redis.py         # Redis 连接 + 状态缓存
-│   ├── s3.py            # S3/OSS 文件存储
-│   └── models/          # SQLAlchemy 模型
+├── llm/
+│   └── client.py            # OpenAI/Anthropic 客户端（带回退）
 │
-├── db/
-│   ├── init.sql         # 建表 SQL
-│   └── migrations/      # alembic 迁移（future）
-│
-├── tests/
-│   ├── test_generators.py
-│   ├── test_quality_gate.py
-│   └── fixtures/        # 测试样本
-│
-├── scripts/
-│   ├── init_db.py       # 初始化数据库
-│   └── seed_knowledge.py # 填充知识库基础数据
-│
+├── tests/                   # pytest + asyncio 测试
+├── scripts/                 # 开发脚本 + smoke test
 ├── config/
-│   ├── docker-compose.yml  # PostgreSQL + Redis 本地开发
-│   └── .env.example      # 环境变量模板
+│   ├── docker-compose.yml   # PostgreSQL + Redis 本地开发
+│   └── .env.example         # 环境变量模板
 │
 ├── requirements.txt
-├── Dockerfile
-└── README.md            # 你在这里
+└── Makefile
 ```
 
 ---
@@ -107,15 +104,14 @@ sdv-mod-generator/
 
 - Python 3.11+
 - Docker Desktop（本地开发用 PostgreSQL + Redis）
-- OpenAI API Key（LLM 调用）
+- OpenAI 兼容 API Key（LLM 调用）
 - Discord Bot Token（Discord 交互）
 
-### 1. 克隆 + 安装依赖
+### 1. 安装依赖
 
 ```bash
-git clone https://github.com/your-org/sdv-mod-generator.git
 cd sdv-mod-generator
-make install    # 自动创建 .venv 并安装依赖
+pip install -r requirements.txt
 ```
 
 ### 2. 配置环境变量
@@ -129,12 +125,15 @@ cp config/.env.example config/.env
 
 | Key | 用途 |
 |---|---|
-| `OPENAI_API_KEY` | LLM 生成 + L2 评审 |
+| `OPENAI_API_KEY` | LLM 生成 + T2 评审 |
+| `OPENAI_BASE_URL` | LLM API 端点（默认 MiniMax，可换 proxy） |
+| `OPENAI_MODEL` | 模型名 |
 | `DISCORD_BOT_TOKEN` | Discord bot 运行 |
+| `DISCORD_APP_ID` | Discord 应用 ID |
+| `DISCORD_SYNC_GUILD_ID` | 开发时同步 slash 命令的服务器 ID（可选） |
+| `DISCORD_PUBLIC_KEY` | webhook 路径 Ed25519 校验（可选） |
 | `DATABASE_URL` | PostgreSQL 连接串 |
 | `REDIS_URL` | Redis 连接串 |
-| `AWS_ACCESS_KEY_ID` | S3 文件存储（可选） |
-| `AWS_SECRET_ACCESS_KEY` | S3 文件存储（可选） |
 
 ### 3. 启动依赖服务
 
@@ -143,107 +142,58 @@ cd config
 docker compose up -d
 ```
 
-这会启动：
-- PostgreSQL on `localhost:5432`
-- Redis on `localhost:6379`
+这会启动 PostgreSQL 和 Redis。数据库表在 FastAPI lifespan 启动时自动初始化（`init_db`）。
 
-### 4. 初始化数据库
-
-```bash
-psql $DATABASE_URL -f db/init.sql
-# 或用脚本：
-python scripts/init_db.py
-```
-
-### 5. 填充知识库基础数据
-
-```bash
-python scripts/seed_knowledge.py
-```
-
-### 6. 验证服务
-
-```bash
-curl http://localhost:8000/health
-# → {"status": "ok", "ts": "..."}
-```
-
-### 7. 使用 Makefile 构建（推荐）
+### 4. 启动 API + Discord bot
 
 ```bash
 cd sdv-mod-generator
-
-make install       # 自动创建 .venv 并安装依赖
-make test          # 运行测试
-make lint          # 类型检查 + lint（mypy + ruff）
-make run           # 启动 API 服务（uvicorn --reload --port 8000）
-make build         # 运行 test + lint，验证全部通过
-make clean         # 清理缓存文件
-make stop          # 停止 uvicorn 服务
+PYTHONPATH=. uvicorn app.main:app --reload --port 8000
 ```
 
-### 8. 触发第一个生成（测试模式）
+Discord bot 不是独立进程——它在 FastAPI lifespan 里启动（当 `DISCORD_BOT_TOKEN` 已设置时）。启动日志出现 `discord.bot.ready` 即 bot 已上线。
+
+### 5. 验证
+
+```bash
+curl http://localhost:8000/health
+# → {"status":"ok","discord_bot_ready":true,...}
+```
+
+### 6. Makefile
+
+```bash
+make test          # 运行测试
+make test-quick    # 跳过集成测试
+make lint          # mypy + ruff
+make run           # 启动 API 服务
+```
+
+---
+
+## API 端点
+
+| Endpoint | Method | 说明 |
+|---|---|---|
+| `/health` | GET | 健康检查（含 discord_bot_ready） |
+| `/health/deep` | GET | 深度就绪检查（DB/Redis/S3/gateway） |
+| `/v1/mods/generate` | POST | 发起生成（非阻塞，返回 request_id） |
+| `/v1/mods/status/{id}` | GET | 从 Redis 轮询状态 |
+| `/v1/mods/{id}` | GET | 完整状态（Redis → Postgres 回退） |
+| `/v1/mods/download/{id}` | GET | 预签名 S3 / file:// 下载 URL |
+| `/v1/mods/{id}/files` | GET | 生成文件预览 |
+| `/v1/users/{id}/history` | GET | 用户历史（API key 可选） |
+| `/webhooks/discord` | POST | Discord HTTP interactions webhook |
+
+### 发起生成
 
 ```bash
 curl -X POST http://localhost:8000/v1/mods/generate \
   -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "test_user_001",
-    "prompt": "做一个电视购物频道，每周随机卖道具"
-  }'
+  -d '{"user_id":"test","prompt":"make a TV shopping channel that sells rare seeds every Sunday"}'
 ```
 
-返回 `request_id` 后，在日志里看 pipeline 跑的过程：
-
-```
-INFO pipeline.routing    request_id=req_xxx phase=p1_shop_channel
-INFO pipeline.generator_run request_id=req_xxx generator=gen_shop_item_pool
-INFO pipeline.generation_done request_id=req_xxx files=2
-INFO pipeline.done request_id=req_xxx zip_key=mods/req_xxx/req_xxx.zip
-```
-
-生成的 zip 包在 `/workspace/generated_mods/req_xxx.zip`。
-
----
-
-## API 文档
-
-### `POST /v1/mods/generate`
-
-发起模组生成请求。
-
-**Request**
-```json
-{
-  "user_id": "discord_12345",
-  "prompt": "做一个电视购物频道，每周随机卖道具",
-  "phase": "p1_shop_channel"  // optional override
-}
-```
-
-**Response**
-```json
-{
-  "request_id": "req_a1b2c3d4e5f6",
-  "status": "pending"
-}
-```
-
-### `GET /v1/mods/{request_id}`
-
-查询生成状态和结果。
-
-**Response**
-```json
-{
-  "request_id": "req_a1b2c3d4e5f6",
-  "status": "done",
-  "zip_url": "https://s3.../req_a1b2c3d4e5f6.zip",
-  "files_preview": ["manifest.json", "content.json", "i18n/default.json"],
-  "l1_errors": [],
-  "l2_feedback": "[L2] score=8 — 完整模组，包含 TV 频道和商品系统"
-}
-```
+返回 `request_id` + `status: running`，然后轮询 `/v1/mods/status/{id}` 直到 `done`。
 
 ---
 
@@ -252,127 +202,42 @@ INFO pipeline.done request_id=req_xxx zip_key=mods/req_xxx/req_xxx.zip
 ```
 用户 prompt
     ↓
-┌── Step 1: Route ───────────────────────────────────────────┐
-│  router.py 关键词匹配 → 返回 (phase, generator列表, hint)  │
-│  hint 包含 execution_order 和 dependencies                  │
-└───────────────────────────────────────────────────────────┘
+Step 1: Route — 关键词匹配 → (game, phase, generators, hint)
+    12 个 phase：shop_channel / texture / sprite / npc_schedule / event_mod /
+    custom_crafting / farm_expansion / weather_event / achievements /
+    weapon_definition / tool_definition / general_author
     ↓
-┌── Step 2: Generate ────────────────────────────────────────┐
-│  每个 generator 独立跑 generate() → 返回 GeneratorOutput     │
-│  顺序由 hint["execution_order"] 决定                         │
-│  输出：files dict + assets list + metadata                  │
-└───────────────────────────────────────────────────────────┘
+Step 2: Generate — 每个 generator 跑 generate() → GeneratorOutput
     ↓
-┌── Step 3: L1 Gate（快速确定性校验）────────────────────────┐
-│  JSON Schema 校验 manifest.json / content.json             │
-│  检查必需字段、格式、引用完整性                              │
-│  失败 → 模板兜底重试                                        │
-└───────────────────────────────────────────────────────────┘
+Step 3: T1 Gate — 确定性校验：manifest 必填字段、content.json CP schema、
+    When token 白名单、游戏数据门（typed 对象不允许 pipe 字符串等）
     ↓
-┌── Step 4: L2 Gate（LLM 评审）──────────────────────────────┐
-│  第二个 LLM 跑一遍生成结果，输出质量分数                     │
-│  检查逻辑连贯性、i18n 一致性、游戏机制正确性                  │
-│  失败 → 返回反馈给用户，请求修正                            │
-└───────────────────────────────────────────────────────────┘
+Step 4: T2 Gate — 三法官 LLM 评审（GameBalance / ContentQuality /
+    TechnicalCompliance），失败时按 max_t2_iterations 回 Generate 重试
     ↓
-┌── Step 5: Package ─────────────────────────────────────────┐
-│  files dict → ZIP → S3 上传                                 │
-│  返回 zip_s3_key → 状态写入 DB                               │
-└───────────────────────────────────────────────────────────┘
+Step 5: Package — files + assets → ZIP → 本地/S3
     ↓
-Discord 推送 / API 返回结果
-```
-
----
-
-## Generator 开发指南
-
-### 添加新的 Generator
-
-**步骤 1**：继承 `BaseGenerator`，实现 `generate()` 和 `validate_output()`
-
-```python
-# generators/my_feature.py
-from generators.base import BaseGenerator, GeneratorInput, GeneratorOutput
-
-class MyFeatureGenerator(BaseGenerator):
-    name = "gen_my_feature"
-    phase = "p1_shop_channel"  # 或 "p0_texture"
-
-    def generate(self, inp: GeneratorInput) -> GeneratorOutput:
-        out = GeneratorOutput(files={}, assets=[], metadata={})
-        # 生成逻辑
-        out.add_file("myfile.json", {"key": "value"})
-        out.add_asset("/workspace/imgs/my_asset.png")
-        return out
-
-    def validate_output(self, output: GeneratorOutput) -> list[str]:
-        errors = []
-        if "myfile.json" not in output.files:
-            errors.append("gen_my_feature: missing myfile.json")
-        return errors
-```
-
-**步骤 2**：注册到 `generators/registry.py`
-
-```python
-from generators.my_feature import MyFeatureGenerator
-_GENERATOR_REGISTRY["gen_my_feature"] = MyFeatureGenerator
-```
-
-**步骤 3**：在 `orchestrator/router.py` 添加关键词路由
-
-```python
-FEATURE_TO_GENERATORS = {
-    "my_feature": ["gen_my_feature", "gen_related_feature"],
-}
-FEATURE_TO_PHASE = {
-    "my_feature": "p1_shop_channel",
-}
-```
-
----
-
-## 知识库维护
-
-知识库是让 Router 正确路由 + Generator 正确生成的根基。
-
-### 核心文件
-
-| 文件 | 用途 |
-|---|---|
-| `knowledge/cases/01-*.md` | 模组案例拆解（从源码分析生成） |
-| `knowledge/data/item_ids.json` | SDV 物品/家具 ID 前缀速查 |
-| `knowledge/data/game_systems.json` | 游戏系统 API 摘要 |
-| `knowledge/data/content_actions.json` | Content Patcher Action 类型参考 |
-| `orchestrator/router.py` | 关键词 → generator 映射（功能路由表） |
-
-### 添加新案例
-
-```bash
-# 1. 下载模组 zip，解压到 /workspace/sdv-knowledge-base/cases/
-# 2. 分析源码结构
-# 3. 写一个新的 case md 文件
-# 4. 更新 router.py 的 FEATURE_TO_GENERATORS
+Discord Notifier 轮询 Redis → 完成时 DM zip 给用户
 ```
 
 ---
 
 ## Discord Bot
 
-Bot 运行在独立的进程，通过 webhook 推送结果。
+Bot 支持两种交互：
 
-```bash
-python -m app.discord.bot
-```
-
-Bot 支持的 slash commands：
+**Slash 命令**（在服务器 `/` 选择器里）：
 
 | Command | 说明 |
 |---|---|
-| `/mod generate <描述>` | 发起模组生成 |
-| `/mod status <request_id>` | 查询状态 |
-| `/mod history` | 查看历史生成记录 |
+| `/generate <prompt>` | 发起模组生成 |
+| `/status <request_id>` | 查询状态 |
+| `/cancel <request_id>` | 取消进行中的请求 |
+| `/history` | 查看历史生成记录 |
+
+**自由聊天**：在频道里 @bot 并描述需求（≥20 字符），bot 会自动当作模组请求处理，完成后 DM 你 zip 包。
+
+完整的 Discord 配置指南（权限、intents、邀请链接）见 `docs/discord-bot-setup-guide.md`。
 
 ---
 
@@ -380,24 +245,26 @@ Bot 支持的 slash commands：
 
 ### 代码风格
 - 类型注解必须写（`mypy` 检查）
-- 所有文件级 docstring 用英文简短描述
+- 文件级 docstring 用英文简短描述
 - 日志用 structlog，字段名用 snake_case
+- 秘密全部走环境变量，不硬编码
 
 ### 测试
 ```bash
 pytest tests/ -v
 ```
 
+真机 smoke test（需要本地 Stardew Valley + SMAPI 安装）：
+
+```bash
+SDV_INSTALL_PATH="D:\SteamLibrary\steamapps\common\Stardew Valley" \
+  pytest tests/test_smapi_real_load.py -v
+```
+
 ### 提交前检查
 ```bash
-# 1. 类型检查
-mypy sdv-mod-generator/
-
-# 2. 格式化
-ruff check .
-
-# 3. 运行测试
-pytest tests/
+make lint       # mypy + ruff
+make test       # 全量测试
 ```
 
 ---
@@ -408,14 +275,17 @@ pytest tests/
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `OPENAI_API_KEY` | — | OpenAI API Key |
+| `OPENAI_API_KEY` | — | LLM API Key |
+| `OPENAI_BASE_URL` | `https://api.minimaxi.com/v1` | LLM 端点 |
+| `OPENAI_MODEL` | `MiniMax-M2.7` | 模型名 |
 | `DISCORD_BOT_TOKEN` | — | Discord Bot Token |
-| `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL 连接串 |
+| `DISCORD_APP_ID` | — | Discord 应用 ID |
+| `DISCORD_SYNC_GUILD_ID` | — | 开发时同步命令的服务器 ID |
+| `DATABASE_URL` | `postgresql+asyncpg://localhost:5432/sdv_mods` | PostgreSQL 连接串 |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis 连接串 |
-| `AWS_ACCESS_KEY_ID` | — | AWS S3 Access Key |
-| `AWS_SECRET_ACCESS_KEY` | — | AWS S3 Secret |
 | `S3_BUCKET` | `sdv-mod-generator` | S3 Bucket 名 |
 | `S3_REGION` | `us-east-1` | S3 区域 |
+| `LOCAL_OUTPUT_DIR` | `/tmp/sdv-mod-generator/outputs` | 本地 zip 输出目录 |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 
 ---
@@ -423,6 +293,7 @@ pytest tests/
 ## 项目进度
 
 见 `PHASES.md` — 按 Phase 描述项目从零到上线的完整路线图。
+见 `JOURNEY.md` — 人机协作的完整时间线 + vibe-coding 经验教训。
 
 ---
 

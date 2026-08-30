@@ -38,3 +38,21 @@ class TestIntakeRules:
 
     def test_whitespace_only_content_no_trigger(self):
         assert _extract_prompt_from_message("\t\n") is None
+
+    def test_mention_then_slash_command_does_not_trigger(self):
+        # "@Bot /status" arrives as a plain message "<@id> /status", not a
+        # slash-command interaction. Must NOT trigger generation.
+        assert _extract_prompt_from_message("<@1510588580098216127> /status") is None
+
+    def test_mention_then_bang_command_does_not_trigger(self):
+        assert _extract_prompt_from_message("<@!1510588580098216127> !generate") is None
+
+    def test_bare_mention_does_not_trigger(self):
+        assert _extract_prompt_from_message("<@1510588580098216127>") is None
+
+    def test_mention_then_real_prompt_still_triggers(self):
+        # Mention prefix is stripped, the actual mod request still fires.
+        prompt = _extract_prompt_from_message(
+            "<@1510588580098216127> make a tv shopping channel with weekly deals"
+        )
+        assert prompt == "make a tv shopping channel with weekly deals"

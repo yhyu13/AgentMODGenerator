@@ -17,6 +17,9 @@
 - **BroadcastAPI 级商店** — 7 月 16 日的重写没提交；后来的工作让 10 个模板「能加载」，不是对齐电视购物「看→买→次日邮寄」回路。（差口岸期）
 - **Session 4 收尾** — 当时「LLM 模组进真机正确性检查」进行到一半，日志里已把该发现写成 Session 6 的触发点。（老师是错的期）
 - **texture 生成器的旧字段未修** — `texture/__init__.py:79-90` 用 `SourceRect/ToRect` + `Format 1.29.0`（旧语法），生产包用 `FromArea/ToArea` + `Format 2.0.0`；按精准修改原则只在新 sprite 生成器用了正确字段，没回头改 texture。（贴图生成期）
+- **`weapon_definition`/`tool_definition` 的硬编码 UniqueID** — 已修为 prompt 派生，但「同 prompt 重新生成仍撞同 ID」没解决：`slugify_unique_id(prompt)` 对相同提示词产出相同 ID，真机里两个同名 mod 仍会撞「multiple copies」。要彻底关死需在 ID 里混入 request_id 或非确定性后缀。（Discord 端到端期）
+- **真机 smoke test 的 parser 是绿的不等于真绿** — 已补「multiple copies」/「could not be added」两个 pattern，但「加载成功 ≠ 数据正确」的老问题仍在：真机能 load 不代表模组在游戏里真的生效（Session 4 的教训没被 parser 覆盖）。（Discord 端到端期）
+- **Discord 端到端只验到 notifier 边界** — 真 DM 走的是 fake-bot 单测路径 + 服务器日志 `sent.success`，没在真实 Discord WebSocket 上点过一条真消息（本会话确认真 token 能连 gateway、`/health` 报 ready，但没人工在客户端确认收到 zip）。（Discord 端到端期）
 
 ---
 
@@ -167,6 +170,24 @@ ME 原话：`finish the image gen sprite feature, perfectly integrate into mode 
 | （隐含：实现） | 补四块：① T1 门 `sprite_generator` 臂（manifest 必填字段 + content.json Changes 非空，红绿两测）；② `test_full_pipeline_sprite`（`SPRITE_DETERMINISTIC=1` 跑完整 Route→Generate→T1→T2→Package）；③ conftest 隔离 `MINIMAX_API_KEY`/`MINIMAX_BASE_URL`/`SPRITE_IMAGE_PROVIDER`/`SPRITE_DETERMINISTIC`；④ `.env.example` + `prod.env.example` 文档化这四个变量。 |
 | （隐含：真实验证，不信 mock） | 装 Pillow（requirements 已声明，本地 env 缺），写一次性脚本加载根 `.env` 真 key，调 `_generate_minimax_image("a glowing blue carp fish")` → **512×512、23171 色 → downsample+quantize → 16 色、前景格 53、PASS**。跑完即删脚本，不打印 key。全量 **1268 passed, 12 skipped**（skip 全是 Windows 无 bash 的脚本测试）。 |
 | （隐含：发现 config 层不认根 .env） | `app/config.py` 只 load `config/.env`（`sdv-mod-generator/config/.env`），不 load 仓库根 `.env`——所以真 key 只在根 `.env`、线上管道（走 `config/.env`）里 MiniMax provider 永远无 key。这是「配置未文档化」缺口的根因，已用 `.env.example`/`prod.env.example` 文档化收口。 |
+
+---
+
+## Discord bot 端到端：提示词→zip→真机（2026-08-30）
+
+ME 原话：`test and complete discord bot call prompt and return zip for me until perfect, no question no ask` → `what is tree.sync why untouched and doc only` → `now config\.env fill in` → `bot invited, join channel but offline for bot? fix` → `why is bot gen mod when with /status?` → `give some prompts to gen mods then tell me mods status when gen, make sure i can receive mods on discord` → `update to journey use journey skill, then test these mods for me with actual game`。
+
+| ME | YOU |
+|---|---|
+| `test and complete discord bot call prompt and return zip ... no question no ask` | 不假设、先实测：跑真实管道，发现 `.env` 里 `OPENAI_MODEL=claude-sonnet-4-6` 被 proxy 拒（403 user not allowed），8/11 生成器全挂、zip 无 manifest.json。probe proxy 实测唯一可用的文本模型是 `gpt-5.6-luna`，改 `.env`。 |
+| （隐含：顺藤摸瓜修类，不只修点） | 连修四个 bug：① `.env` 模型名错；② Discord bot 路径（`run_pipeline_background` 直调）从不插 `mod_requests` 行 → `save_mod_output` 撞 FK `mod_outputs_request_id_fkey`，API 路径插了行、bot 路径没插——修成 `create_mod_request` 幂等（`ON CONFLICT DO NOTHING`）+ 管道收尾补插；③ notifier 用整个存储路径当 Discord 附件文件名（`mods/req_x/req_x.zip` 带斜杠），改成 basename；④ `storage/redis.py` 用保留字 `event=` 当 structlog kwarg → 每条日志都炸 `got multiple values for argument 'event'`，改名 `log_event=`。 |
+| `what is tree.sync why untouched and doc only` | 解释：`@_bot.tree.command` 只注册到本地树，必须 `tree.sync()` 才上传 Discord。补 `_sync_command_tree` + `on_ready` 调用，4 个测试。 |
+| `now config\.env fill in` | 用 bot token 实测 `GET /applications/@me` 拿到 `verify_key`（= `DISCORD_PUBLIC_KEY`）填进 `.env`；`GET /users/@me/guilds` 返回 `[]`——bot 在 0 个服务器，guild id 填不了（留注释让用户邀请后填）。 |
+| `bot invited, join channel but offline for bot? fix` | 两个真 bug：① bot 不是独立进程，只在 FastAPI lifespan 里起（`app/main.py:137`），没起服务器所以一直 offline；② 起服务器后 `tree_sync` 报 `command_count: 0`——命令是**全局**注册的（`@_bot.tree.command` 无 `guild=`），`tree.sync(guild=...)` 只推该 guild 的命令，所以推了 0 个。修 `copy_global_to(guild)` 先下放到 guild 再 sync → `command_count: 4`。 |
+| `why is bot gen mod when with /status?` | 根因：`@Bot /status` 不是 slash 交互，Discord 以普通消息送达（content=`<@id> /status`），intake 只判「以 `/` 开头」，mention 前缀挡住了 `/`，20 字门槛放行 → 把 `/status` 当 mod 提示词生成了一个 zip。修 `_extract_prompt_from_message` 先剥 `<@id>`/`<@!id>` mention 再判命令/空，4 个回归测试。 |
+| `give some prompts ... make sure i can receive mods on discord` | 写 `scripts/fire_gens.py`：三路真提示词（shop/npc/weapon）走 bot 同路径（set_notification_target + run_pipeline_background），轮询 Redis 到 done，服务器 notifier 三个 `sent.success` 全到用户 id。 |
+| `test these mods for me with actual game` | 真机 SMAPI 4.5.2 + SDV 1.6.15 加载三个 zip：**gen_shop / gen_npc 干净**；**gen_weapon 撞 UniqueID**——`weapon_definition`/`tool_definition` 没有 manifest generator，`_DEFAULT_MOD_ID` 硬编码成每个武器模组同一个 ID，SMAPI 报「multiple copies of this mod installed」拒载。修成 prompt 派生 ID（`slugify_unique_id(prompt, prefix="")`），重生成再真机加载干净。 |
+| （隐含：门没拦住这个失败） | 发现 `smapi_load_parser.py` 的 `HARD_FAIL_PATTERNS` 漏了「could not be added to your game」/「multiple copies of this mod」——真机 load 明明跳过了一个模组，parser 仍判绿。补两个 pattern + 回归测试。 |
 
 ---
 

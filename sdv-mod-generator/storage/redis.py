@@ -255,7 +255,7 @@ async def append_pipeline_log(
     logger.info(
         "storage.redis.append_pipeline_log",
         request_id=request_id,
-        event=event,
+        log_event=event,
         level=level,
     )
 

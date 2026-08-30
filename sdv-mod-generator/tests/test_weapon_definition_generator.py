@@ -1047,6 +1047,7 @@ def _make_definition_output(
 def _make_cj_inp(
     definition_output: GeneratorOutput | None = None,
     prior_outputs: dict | None = None,
+    prompt: str = "",
 ) -> GeneratorInput:
     """Build a GeneratorInput (TypedDict) for the ContentJsonGenerator.
 
@@ -1065,7 +1066,7 @@ def _make_cj_inp(
     return cast(
         GeneratorInput,
         {
-            "prompt": "",
+            "prompt": prompt,
             "hint": {},
             "t2_feedback": "",
             "request_id": "req_test_weapon_cj",
@@ -1463,6 +1464,47 @@ class TestWeaponDefinitionContentJsonFallbacks:
             f"_DEFAULT_MOD_ID.lower() = {_DEFAULT_MOD_ID.lower()!r}, "
             f"got {out.metadata['mod_id']!r}"
         )
+
+    def test_prompt_derives_unique_mod_id(self) -> None:
+        # This phase has no manifest generator, so the content-json
+        # generator must derive a prompt-unique mod id instead of always
+        # emitting the hardcoded _DEFAULT_MOD_ID. Two weapon mods with
+        # distinct prompts must not collide (SMAPI skips duplicates with
+        # "multiple copies of this mod installed").
+        weapons = [
+            {
+                "ItemId": "custom_weapon_axe",
+                "Name": "Axe",
+                "Description": "An axe.",
+                "MinDamage": 5,
+                "MaxDamage": 10,
+                "CritChance": _DEFAULT_CRIT_CHANCE,
+                "CritMultiplier": _DEFAULT_CRIT_MULTIPLIER,
+                "Speed": _DEFAULT_SPEED,
+                "Type": "Club",
+                "Texture": "Weapons/axe",
+                "DisplayName": "Weapon.custom_weapon_axe.Name",
+            },
+        ]
+        definition = GeneratorOutput()
+        definition.add_file(
+            "assets/weapon_definition/weapons.json",
+            _make_weapons_json(weapons),
+        )
+
+        gen = WeaponDefinitionContentJsonGenerator()
+        out_a = asyncio.run(gen.generate(_make_cj_inp(
+            definition, prompt="add a legendary golden sword weapon"
+        )))
+        out_b = asyncio.run(gen.generate(_make_cj_inp(
+            definition, prompt="add a rusty iron dagger"
+        )))
+
+        id_a = out_a.metadata["mod_id"]
+        id_b = out_b.metadata["mod_id"]
+        assert id_a != id_b, f"distinct prompts must yield distinct mod ids: {id_a!r}"
+        assert id_a != _DEFAULT_MOD_ID.lower()
+        assert id_b != _DEFAULT_MOD_ID.lower()
 
     def test_no_definition_prior_uses_fallback_weapons(self) -> None:
         # No definition_generator prior output → weapons list defaults

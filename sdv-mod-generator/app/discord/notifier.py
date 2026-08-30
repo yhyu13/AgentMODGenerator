@@ -81,10 +81,13 @@ class CompletionNotifier:
         if not user:
             return
         zip_path = _LOCAL_OUTPUT_DIR / zip_key
+        # zip_key is a storage path (e.g. "mods/req_abc/req_abc.zip"); the
+        # Discord attachment filename must be the bare basename, not the path.
+        zip_filename = Path(zip_key).name
         try:
             content = f"✅ Mod ready! Request `{request_id}`"
             if zip_path.exists():
-                await user.send(content, file=discord.File(zip_path, filename=zip_key))
+                await user.send(content, file=discord.File(zip_path, filename=zip_filename))
             else:
                 await user.send(f"{content}\n(zip not on disk: `{zip_key}` — check `/status`)")
             logger.info(

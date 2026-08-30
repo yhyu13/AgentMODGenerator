@@ -17,6 +17,15 @@ HARD_FAIL_PATTERNS = (
     # as "Error preloading content pack '<name>'." — a hard failure the
     # older patterns above don't match.
     "error preloading content pack",
+    # SMAPI emits "These mods could not be added to your game." + a
+    # "- <Name> because ..." line for skipped mods, and the per-mod TRACE
+    # line says "Failed: ...". The most common cause is a duplicate
+    # UniqueID ("multiple copies of this mod installed") — the symptom
+    # that surfaced when two generated weapon mods shared the hardcoded
+    # UniqueID. Neither phrase matched the older patterns, so a
+    # duplicate-id mod was silently green.
+    "could not be added to your game",
+    "multiple copies of this mod",
 )
 
 #: Markers that turn a Content Patcher "Ignored ..." skip into a failure.

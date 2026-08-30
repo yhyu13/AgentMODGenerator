@@ -2,7 +2,7 @@
 from typing import Any
 
 import structlog
-from sqlalchemy import insert, select, text
+from sqlalchemy import text
 
 from storage.postgres import get_session
 from storage.models import ModRequest, ModOutput
@@ -25,9 +25,17 @@ async def create_mod_request(
     # honored both at type-check time and at runtime.
     hint: dict[str, Any],
 ) -> None:
+    # Idempotent: the API route and the Discord-bot path both call this
+    # (the bot via ``run_pipeline_background`` after routing, the API
+    # before launching the pipeline). A second insert with the same
+    # request_id must be a no-op, otherwise the bot path's post-routing
+    # ensure-row would collide with the API's pre-launch row. See
+    # ``_run_pipeline_and_update_status`` in orchestrator/pipeline.py.
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
     async with get_session() as session:
         await session.execute(
-            insert(ModRequest).values(
+            pg_insert(ModRequest).values(
                 request_id=request_id,
                 user_id=user_id,
                 prompt=prompt,
@@ -35,7 +43,7 @@ async def create_mod_request(
                 generators=generators,
                 hint=hint,
                 status="pending",
-            )
+            ).on_conflict_do_nothing(index_elements=["request_id"])
         )
 
 

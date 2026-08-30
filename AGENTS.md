@@ -271,3 +271,11 @@ curl http://localhost:8000/v1/mods/status/{request_id}
 3. **Pipeline timeout test**: Every PR runs `_run_pipeline()` with 60s timeout
 4. **Configuration sanity check**: Validate `max_t2_iterations < 3`, `timeout > 0` at startup
 5. **Pre-commit worktree check**: Reject commit if stale worktrees exist
+
+<!-- openwolf:begin -->
+# OpenWolf
+
+@.wolf/OPENWOLF.md
+
+This project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
+<!-- openwolf:end -->

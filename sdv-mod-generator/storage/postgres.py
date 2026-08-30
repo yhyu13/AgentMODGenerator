@@ -194,7 +194,7 @@ async def init_db() -> None:
     if not init_sql_path.exists():
         logger.error("storage.postgres.init_db.missing_sql", path=str(init_sql_path))
         raise FileNotFoundError(f"Database init SQL not found: {init_sql_path}")
-    sql = init_sql_path.read_text()
+    sql = init_sql_path.read_text(encoding="utf-8")
 
     engine = get_engine()
     async with engine.begin() as conn:

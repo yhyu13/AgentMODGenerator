@@ -75,6 +75,7 @@ from generators.core import BaseGenerator, GeneratorInput, GeneratorOutput
 from generators.core.manifest import (
     build_manifest_dict,
     fallback_name_from_prompt,
+    slugify_unique_id,
 )
 from generators.llm_utils import generate_structured, llm_system_prompt
 
@@ -661,8 +662,16 @@ class ToolDefinitionContentJsonGenerator(BaseGenerator):
         prior = inp.get("prior_outputs", {}) or {}
 
         # Manifest mod id (lower-case per Content Patcher
-        # convention). Falls back to the hard-coded mod id if
-        # the manifest generator didn't run first.
+        # convention). This phase has no dedicated manifest generator
+        # (the router yields only the definition + content-json
+        # generators), so prior_outputs never carries a
+        # "manifest_generator" entry and the hardcoded fallback below
+        # was the ONLY id ever used. That made every tool mod emit the
+        # same UniqueID, and SMAPI rejects the second one with
+        # "multiple copies of this mod installed". Derive a
+        # prompt-unique id instead so distinct prompts yield distinct
+        # mods; keep the hardcoded default only for an empty prompt
+        # (the deterministic fallback path used by tests).
         manifest_data = prior.get(
             "manifest_generator", GeneratorOutput()
         )
@@ -673,6 +682,12 @@ class ToolDefinitionContentJsonGenerator(BaseGenerator):
                 unique = manifest.get("UniqueID", "")
                 if isinstance(unique, str) and unique.strip():
                     mod_id = unique.strip().lower()
+        if mod_id == _DEFAULT_MOD_ID:
+            prompt_text = (inp.get("prompt") or "").strip()
+            if prompt_text:
+                mod_id = slugify_unique_id(
+                    prompt_text, prefix="", default=_DEFAULT_MOD_ID
+                )
 
         # Pull tool list from the definition generator.
         tools: list[dict[str, object]] = []
