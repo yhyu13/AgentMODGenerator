@@ -22,6 +22,7 @@
 - **MiniMax 真实 API 已跑通（非 mock）**：`_generate_minimax_image("a glowing blue carp fish")` 直连 `api.minimaxi.com/v1/image_generation` → 512×512 JPEG、23171 色 → downsample+quantize → 16 色、前景格 53、verdict PASS。此前只靠 mocked aiohttp 钉死请求形状，现已用真 key 验证。
 - **sprite 配置已文档化 + 测试隔离**：`.env.example` + `prod.env.example` 记录 `SPRITE_IMAGE_PROVIDER`/`MINIMAX_API_KEY`/`MINIMAX_BASE_URL`/`SPRITE_DETERMINISTIC`；`conftest._isolate_test_env` 隔离这四变量（AGENTS.md「新 env var → 加进 fixture」约定）。生成器读 os.environ 直接（同 `GENERAL_AUTHOR_DETERMINISTIC` 惯例），不走 `Config` dataclass。
 - **真实 sprite demo（2026-08-30）**：auto-detect 生效（未设 `SPRITE_IMAGE_PROVIDER`，靠根 `.env` 的 `MINIMAX_API_KEY` 路由到 minimax），3 个 prompt 各生成一张 16×16 sprite + 打包成合法 CP zip（SMAPI 静态校验 0 错误）。色板证实对题：fish=全蓝青（#74c4e0 系，47 前景格）、ruby=全红（#a81e39 系，60 前景格）、sword=全金（#f6e6b6 系，22 前景格）。产出在 `mods/sprite_demo/sprite_*.png`（16×16 + `_256.png` 放大版）和 `D:\tmp\sdv-mod-generator\outputs\mods\sprite_demo_*\*.zip`。
+- **provider 对比（2026-08-30）：MiniMax image-01 色彩保真 > gpt-image-1.5（llm-proxy）**。同 prompt 各跑一次：hot pepper——minimax 明显红（#bb1b1e/#cd282f，mean_sat 0.46）vs openai 红绿灰混杂（#c13516 混 #325823，mean_sat 0.32）；carrot——minimax 有橙（#bc6f33/#f2a475）vs openai 偏绿（#6e9c56/#457440，绿缨占了主导）。**结论：sprite 默认走 minimax 是对的**（auto-detect 已验证此选择）。附带发现：image-01 同 prompt 多次调用色板**方差大**（carrot 三次跑出 tan/粉/橙三种），「carrot 是棕」是采样伪影而非系统缺陷——加「vivid saturated」prompt 后橙色已能出现。
 
 ## Gotcha（错误签名 → 修复）
 
